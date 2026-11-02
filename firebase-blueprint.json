@@ -1,0 +1,315 @@
+{
+  "entities": {
+    "Client": {
+      "title": "Client",
+      "description": "Registered client with customized screens, individual pricing, and assigned apps",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Full name of the client",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "description": "Contact email of client",
+          "maxLength": 120
+        },
+        "whatsapp": {
+          "type": "string",
+          "description": "Client WhatsApp number",
+          "maxLength": 30
+        },
+        "avatar": {
+          "type": "string",
+          "description": "Profile picture URL or base64 data"
+        },
+        "plan": {
+          "type": "string",
+          "description": "Plan description name",
+          "maxLength": 100
+        },
+        "expirationDate": {
+          "type": "string",
+          "description": "Subscription expiration date string (DD/MM/YYYY)",
+          "maxLength": 20
+        },
+        "screens": {
+          "type": "number",
+          "description": "Number of screens liberated by admin"
+        },
+        "customPrice": {
+          "type": "number",
+          "description": "Individual monthly subscription price configured by admin"
+        },
+        "status": {
+          "type": "string",
+          "description": "Subscription status",
+          "enum": ["ativo", "pendente", "expirado"]
+        },
+        "notes": {
+          "type": "string",
+          "description": "Admin notes for this client",
+          "maxLength": 500
+        },
+        "customApps": {
+          "type": "array",
+          "description": "Personalized apps assigned specifically to this client"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Registration date (YYYY-MM-DD)",
+          "maxLength": 20
+        }
+      },
+      "required": ["name", "email", "screens", "customPrice", "status"]
+    },
+    "Trailer": {
+      "title": "Trailer",
+      "description": "9:16 mobile format movie trailer displayed in the main feed",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Title of the movie or series",
+          "maxLength": 100
+        },
+        "category": {
+          "type": "string",
+          "description": "Category or genre",
+          "maxLength": 50
+        },
+        "year": {
+          "type": "number",
+          "description": "Release year"
+        },
+        "videoUrl": {
+          "type": "string",
+          "description": "Direct MP4 or video stream URL"
+        },
+        "poster": {
+          "type": "string",
+          "description": "Thumbnail poster image URL"
+        },
+        "synopsis": {
+          "type": "string",
+          "description": "Plot synopsis",
+          "maxLength": 1000
+        },
+        "likes": {
+          "type": "number",
+          "description": "Number of likes"
+        },
+        "shares": {
+          "type": "number",
+          "description": "Number of shares"
+        },
+        "views": {
+          "type": "number",
+          "description": "Number of views"
+        },
+        "featuredTag": {
+          "type": "string",
+          "description": "Badge tag like Estreia Exclusiva",
+          "maxLength": 50
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp",
+          "maxLength": 30
+        }
+      },
+      "required": ["title", "category", "videoUrl"]
+    },
+    "AppItem": {
+      "title": "AppItem",
+      "description": "Global catalog app for Smart TV, TV Box, Android, iPhone, Windows, or Web",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the application",
+          "maxLength": 100
+        },
+        "platform": {
+          "type": "string",
+          "description": "Target platform",
+          "enum": ["ios", "android", "smart-tv", "tv-box", "windows", "web"]
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Device compatibility subtitle",
+          "maxLength": 150
+        },
+        "version": {
+          "type": "string",
+          "description": "Application version",
+          "maxLength": 30
+        },
+        "status": {
+          "type": "string",
+          "description": "Status of the app release",
+          "enum": ["ativo", "disponivel", "em_breve", "atualizacao"]
+        },
+        "downloadUrl": {
+          "type": "string",
+          "description": "Direct download link or APK URL"
+        },
+        "pairingCode": {
+          "type": "string",
+          "description": "Activation code or TV pairing instructions",
+          "maxLength": 80
+        },
+        "instructions": {
+          "type": "array",
+          "description": "Step-by-step installation instructions"
+        }
+      },
+      "required": ["name", "platform", "version", "status"]
+    },
+    "Program": {
+      "title": "Program",
+      "description": "Daily TV programming guide schedule item",
+      "type": "object",
+      "properties": {
+        "channelName": {
+          "type": "string",
+          "description": "Channel name",
+          "maxLength": 80
+        },
+        "channelLogo": {
+          "type": "string",
+          "description": "Logo emoji or URL",
+          "maxLength": 20
+        },
+        "category": {
+          "type": "string",
+          "description": "Channel category",
+          "maxLength": 50
+        },
+        "time": {
+          "type": "string",
+          "description": "Start time HH:MM",
+          "maxLength": 10
+        },
+        "endTime": {
+          "type": "string",
+          "description": "End time HH:MM",
+          "maxLength": 10
+        },
+        "title": {
+          "type": "string",
+          "description": "Show title",
+          "maxLength": 120
+        },
+        "description": {
+          "type": "string",
+          "description": "Synopsis of the show",
+          "maxLength": 500
+        },
+        "isLive": {
+          "type": "boolean",
+          "description": "Whether program is currently live"
+        },
+        "progress": {
+          "type": "number",
+          "description": "Progress percentage"
+        },
+        "badge": {
+          "type": "string",
+          "description": "Badge tag like AO VIVO 4K",
+          "maxLength": 50
+        }
+      },
+      "required": ["channelName", "title", "time"]
+    },
+    "PushNotification": {
+      "title": "PushNotification",
+      "description": "Firebase Cloud Messaging push notification record for client invoices and expiration alerts",
+      "type": "object",
+      "properties": {
+        "clientId": {
+          "type": "string",
+          "description": "ID of target client or all",
+          "maxLength": 100
+        },
+        "clientName": {
+          "type": "string",
+          "description": "Name of target client",
+          "maxLength": 100
+        },
+        "title": {
+          "type": "string",
+          "description": "Notification title",
+          "maxLength": 150
+        },
+        "body": {
+          "type": "string",
+          "description": "Notification body content",
+          "maxLength": 500
+        },
+        "type": {
+          "type": "string",
+          "description": "Category of alert",
+          "enum": ["expiration_warning", "new_invoice", "plan_expired", "custom"]
+        },
+        "status": {
+          "type": "string",
+          "description": "Delivery status",
+          "enum": ["sent", "delivered", "failed"]
+        },
+        "read": {
+          "type": "boolean",
+          "description": "Whether notification has been read by client"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp string",
+          "maxLength": 40
+        },
+        "dueDate": {
+          "type": "string",
+          "description": "Due date if invoice or expiration",
+          "maxLength": 30
+        },
+        "invoiceAmount": {
+          "type": "number",
+          "description": "Invoice value if applicable"
+        },
+        "fcmMessageId": {
+          "type": "string",
+          "description": "FCM assigned message ID",
+          "maxLength": 100
+        },
+        "deliveryChannel": {
+          "type": "string",
+          "description": "Channel used for delivery",
+          "maxLength": 30
+        }
+      },
+      "required": ["clientId", "title", "body", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/clients/{clientId}": {
+      "schema": "Client",
+      "description": "Clients with individual screens, prices, and custom apps"
+    },
+    "/trailers/{trailerId}": {
+      "schema": "Trailer",
+      "description": "9:16 mobile trailers for the main feed"
+    },
+    "/apps/{appId}": {
+      "schema": "AppItem",
+      "description": "Global catalog applications"
+    },
+    "/programs/{programId}": {
+      "schema": "Program",
+      "description": "Daily program guide schedule items"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "PushNotification",
+      "description": "Push notification logs and client alerts"
+    }
+  }
+}

@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #040c09;
+    color: #f1f5f9;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Outfit', sans-serif;
+  }
+}
+
+/* Custom glow utilities */
+.glow-emerald {
+  box-shadow: 0 0 25px rgba(0, 245, 155, 0.35);
+}
+
+.glow-emerald-lg {
+  box-shadow: 0 0 45px rgba(0, 245, 155, 0.55), inset 0 0 20px rgba(0, 245, 155, 0.2);
+}
+
+.glow-text {
+  text-shadow: 0 0 16px rgba(0, 245, 155, 0.6);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(6, 26, 20, 0.6);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.6);
+}

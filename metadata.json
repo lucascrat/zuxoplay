@@ -1,0 +1,8 @@
+{
+  "name": "Zuxo Player",
+  "description": "gerenciador completo de clientes onliine ",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

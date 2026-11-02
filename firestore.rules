@@ -1,0 +1,50 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 9:16 Mobile Trailers Feed
+    match /trailers/{trailerId} {
+      allow read: if true;
+      allow write: if isValidId(trailerId);
+    }
+
+    // Global Client Apps Catalog
+    match /apps/{appId} {
+      allow read: if true;
+      allow write: if isValidId(appId);
+    }
+
+    // Daily Programming Guide
+    match /programs/{programId} {
+      allow read: if true;
+      allow write: if isValidId(programId);
+    }
+
+    // Registered Clients with personalized apps, screens, and pricing
+    match /clients/{clientId} {
+      allow get, list: if true;
+      allow write: if isValidId(clientId);
+    }
+
+    // Push Notifications and Alerts
+    match /notifications/{notificationId} {
+      allow get, list: if true;
+      allow write: if isValidId(notificationId);
+    }
+
+    // System Activity & Audit Logs
+    match /system_logs/{logId} {
+      allow get, list: if true;
+      allow write: if isValidId(logId);
+    }
+  }
+}
