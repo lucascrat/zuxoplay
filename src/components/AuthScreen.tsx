@@ -200,7 +200,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         {/* Brand header */}
         <div className="text-center mb-6">
           <div className="inline-block mb-1">
-            <ZuxoLogo size="md" subtitle="ÁREA DO CLIENTE" />
+            <ZuxoLogo size="lg" useImage={true} />
           </div>
           <p className="text-xs text-slate-300">
             {mode === 'login' ? 'Entre na sua conta para ver seus apps e pagamentos' : 'Crie sua conta para acessar seus aplicativos'}

@@ -1,4 +1,4 @@
-import { TrailerItem, ClientApp, ProgramItem, PaymentPlan, Invoice, UserProfile, SystemLog } from '../types';
+﻿import { TrailerItem, ClientApp, ProgramItem, PaymentPlan, Invoice, UserProfile, SystemLog } from '../types';
 
 export const INITIAL_TRAILERS: TrailerItem[] = [
   // --- FILMES LANÇAMENTOS DISPONÍVEIS (YOUTUBE SHORTS) ---
@@ -221,6 +221,7 @@ export const INITIAL_APPS: ClientApp[] = [
     version: 'v3.5.4 (Mais Recente)',
     status: 'ativo',
     downloadUrl: 'https://play.google.com/store/apps/details?id=com.zuxoplayer.app&hl=pt_BR',
+    iconUrl: '/zuxo-logo.png',
     pairingCode: 'Código Instalação: 84920',
     instructions: [
       'Abra a Google Play Store pelo link oficial',
@@ -236,6 +237,7 @@ export const INITIAL_APPS: ClientApp[] = [
     version: 'v3.5.2',
     status: 'ativo',
     downloadUrl: 'https://apps.apple.com/br/app/zuxo-player/id6782688104',
+    iconUrl: '/zuxo-logo.png',
     pairingCode: 'ID App: ZX-IPHONE-VIP',
     instructions: [
       'Acesse a App Store oficial da Apple pelo link',
@@ -251,6 +253,7 @@ export const INITIAL_APPS: ClientApp[] = [
     version: 'v2.1.0',
     status: 'ativo',
     downloadUrl: 'https://apps.microsoft.com/detail/9nhbl2h0g9fv?hl=pt-BR&gl=BR',
+    iconUrl: '/zuxo-logo.png',
     instructions: [
       'Abra a Microsoft Store oficial pelo link do botão',
       'Instale o aplicativo Zuxo Player no seu PC ou Notebook',
@@ -265,6 +268,7 @@ export const INITIAL_APPS: ClientApp[] = [
     version: 'v2.0.1',
     status: 'ativo',
     downloadUrl: 'https://apps.apple.com/br/app/zuxo-player/id6782688104?platform=mac',
+    iconUrl: '/zuxo-logo.png',
     instructions: [
       'Acesse a Mac App Store pelo link oficial',
       'Instale o Zuxo Player no seu macOS',
@@ -278,6 +282,8 @@ export const INITIAL_APPS: ClientApp[] = [
     subtitle: 'LG (webOS), Samsung (Tizen), Roku e Google TV',
     version: 'v2.8.0',
     status: 'ativo',
+    downloadUrl: 'https://zuxoplay.appbr.pro/smarttv',
+    iconUrl: '/zuxo-logo.png',
     pairingCode: 'Código de Ativação: ZX-84920',
     instructions: [
       'Na loja da sua Smart TV (LG Content Store / Samsung Apps / Roku), busque por "Zuxo Player"',
@@ -292,6 +298,8 @@ export const INITIAL_APPS: ClientApp[] = [
     subtitle: 'Amazon Fire TV Stick 4K, Xiaomi Mi Box, Aquário TV Box',
     version: 'v3.5.4',
     status: 'ativo',
+    downloadUrl: 'https://zuxoplay.appbr.pro/downloads/zuxo-tvbox.apk',
+    iconUrl: '/zuxo-logo.png',
     pairingCode: 'Código Downloader: 84920',
     instructions: [
       'Abra o aplicativo "Downloader" no seu Fire TV ou TV Box',
@@ -300,7 +308,6 @@ export const INITIAL_APPS: ClientApp[] = [
     ]
   }
 ];
-
 export const INITIAL_PROGRAM_GUIDE: ProgramItem[] = [
   {
     id: 'prog-1',
@@ -569,6 +576,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Google Play Store Oficial (Celulares, Tablets e Android TV)',
         version: 'v3.5.4',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         downloadUrl: 'https://play.google.com/store/apps/details?id=com.zuxoplayer.app&hl=pt_BR',
         pairingCode: 'Código Instalação: 84920',
         instructions: [
@@ -583,6 +591,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Apple App Store Oficial (iOS 16, 17 e 18)',
         version: 'v3.5.2',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         downloadUrl: 'https://apps.apple.com/br/app/zuxo-player/id6782688104',
         pairingCode: 'ID App: ZX-IPHONE-VIP',
         instructions: [
@@ -597,6 +606,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Microsoft Store Oficial (Windows 10 e 11)',
         version: 'v2.1.0',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         downloadUrl: 'https://apps.microsoft.com/detail/9nhbl2h0g9fv?hl=pt-BR&gl=BR',
         instructions: [
           'Baixe o app oficial na Microsoft Store',
@@ -610,6 +620,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Mac App Store Oficial (MacBook, iMac e Mac Mini)',
         version: 'v2.0.1',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         downloadUrl: 'https://apps.apple.com/br/app/zuxo-player/id6782688104?platform=mac',
         instructions: [
           'Instale o Zuxo Player na Mac App Store',
@@ -642,6 +653,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Para Amazon FireStick 4K',
         version: 'v3.5.4',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         pairingCode: 'Código Downloader: 84920',
         instructions: ['Abra o Downloader no FireStick', 'Digite o código: 84920', 'Aguarde a instalação e entre']
       },
@@ -652,6 +664,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Microsoft Store Oficial',
         version: 'v2.1.0',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         downloadUrl: 'https://apps.microsoft.com/detail/9nhbl2h0g9fv?hl=pt-BR&gl=BR',
         instructions: ['Instale pela Microsoft Store', 'Entre com mariana_silva e sua senha']
       }
@@ -681,6 +694,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Código de pareamento exclusivo TV Sala',
         version: 'v2.8.0',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         pairingCode: 'Código Pareamento: ZX-CARLOS-77',
         instructions: ['Abra o Zuxo Player na Smart TV', 'Digite o código: ZX-CARLOS-77']
       }
@@ -710,6 +724,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Versão multi-telas para a residência',
         version: 'v3.5.4',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         downloadUrl: 'https://play.google.com/store/apps/details?id=com.zuxoplayer.app&hl=pt_BR',
         pairingCode: 'Código Familiar: 44880',
         instructions: ['Instale pelo link oficial da Google Play Store', 'Use seu Provedor, Usuário e Senha']
@@ -740,6 +755,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'Aplicativo Oficial Android TV',
         version: 'v3.5.4',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         downloadUrl: 'https://play.google.com/store/apps/details?id=com.zuxoplayer.app&hl=pt_BR',
         pairingCode: 'Código TV: RR-9912',
         instructions: ['Abra o app na Android TV', 'Digite o código de pareamento: RR-9912']
@@ -770,6 +786,7 @@ export const INITIAL_CLIENTS: UserProfile[] = [
         subtitle: 'App Store Oficial Apple',
         version: 'v3.5.2',
         status: 'ativo',
+        iconUrl: '/zuxo-logo.png',
         downloadUrl: 'https://apps.apple.com/br/app/zuxo-player/id6782688104',
         instructions: ['Instale o Zuxo Player pela App Store', 'Entre com usuário amanda_ribeiro e sua senha']
       }

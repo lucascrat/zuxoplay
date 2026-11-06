@@ -78,7 +78,7 @@ export const Trial24hModal: React.FC<Trial24hModalProps> = ({
         {/* Modal Header (Styling directly from Image 1 & 4) */}
         <div className="text-center mb-6">
           <div className="inline-block mb-2">
-            <ZuxoLogo size="lg" subtitle="PLAYER" />
+            <ZuxoLogo size="lg" subtitle="PLAYER" useImage={true} />
           </div>
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-emerald-950/90 text-[#00F59B] border border-emerald-600/50 rounded-full text-xs font-bold uppercase tracking-wider mb-2">
             <Sparkles className="w-3.5 h-3.5 fill-current" />

@@ -33,7 +33,7 @@ export const PromoLandingScreen: React.FC<PromoLandingScreenProps> = ({
       <div className="max-w-6xl mx-auto">
         <div className="text-center max-w-3xl mx-auto mb-12">
           <div className="inline-block mb-3">
-            <ZuxoLogo size="xl" subtitle="PLAYER" />
+            <ZuxoLogo size="xl" subtitle="PLAYER" useImage={true} />
           </div>
 
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-emerald-950/80 text-[#00F59B] border border-emerald-500/50 rounded-full text-xs font-bold uppercase tracking-wider mb-4 shadow-sm">

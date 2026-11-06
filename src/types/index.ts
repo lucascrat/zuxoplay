@@ -62,6 +62,7 @@ export interface ClientApp {
   version: string;
   status: 'ativo' | 'disponivel' | 'em_breve' | 'atualizacao';
   downloadUrl?: string;
+  iconUrl?: string;
   pairingCode?: string;
   instructions: string[];
 }

@@ -5,6 +5,7 @@ interface ZuxoLogoProps {
   showSubtitle?: boolean;
   subtitle?: string;
   className?: string;
+  useImage?: boolean;
 }
 
 export const ZuxoLogo: React.FC<ZuxoLogoProps> = ({
@@ -12,6 +13,7 @@ export const ZuxoLogo: React.FC<ZuxoLogoProps> = ({
   showSubtitle = true,
   subtitle = 'PLAYER',
   className = '',
+  useImage = false,
 }) => {
   const sizeClasses = {
     sm: 'text-xl',
@@ -27,11 +29,29 @@ export const ZuxoLogo: React.FC<ZuxoLogoProps> = ({
     xl: 'text-base tracking-[0.4em]',
   };
 
+  const imgSizeClasses = {
+    sm: 'h-10',
+    md: 'h-14',
+    lg: 'h-20',
+    xl: 'h-28',
+  };
+
+  if (useImage) {
+    return (
+      <img
+        src="/zuxo-logo.png"
+        alt="Zuxo Player"
+        className={`object-contain rounded-xl select-none ${imgSizeClasses[size]} ${className}`}
+        draggable={false}
+      />
+    );
+  }
+
   return (
     <div className={`flex flex-col select-none ${className}`}>
       <div className={`font-black tracking-tight leading-none ${sizeClasses[size]} flex items-baseline font-display`}>
         <span className="text-white drop-shadow-sm">Zux</span>
-        <span 
+        <span
           className="text-[#00F59B] inline-block relative ml-[0.5px]"
           style={{
             textShadow: '0 0 20px rgba(0, 245, 155, 0.75), 0 0 40px rgba(0, 245, 155, 0.4)'
@@ -41,7 +61,7 @@ export const ZuxoLogo: React.FC<ZuxoLogoProps> = ({
         </span>
       </div>
       {showSubtitle && (
-        <span 
+        <span
           className={`font-bold uppercase text-[#00F59B]/90 mt-0.5 ${subtitleClasses[size]}`}
           style={{ textShadow: '0 0 10px rgba(0, 245, 155, 0.4)' }}
         >
