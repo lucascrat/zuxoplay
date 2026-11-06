@@ -222,6 +222,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [appVersion, setAppVersion] = useState<string>('v3.5.4');
   const [appDownloadUrl, setAppDownloadUrl] = useState<string>('');
   const [appPairingCode, setAppPairingCode] = useState<string>('');
+  const [appIconUrl, setAppIconUrl] = useState<string>('');
+
+  // CLIENT CATALOG SELECTION STATE
+  const [isSelectingFromCatalog, setIsSelectingFromCatalog] = useState<boolean>(false);
 
   // PROGRAM FORM STATE
   const [isProgFormOpen, setIsProgFormOpen] = useState<boolean>(false);
@@ -1496,14 +1500,72 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </p>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => setIsAddingAppToClient(true)}
-                      className="py-1.5 px-3 bg-[#0c2f21] hover:bg-[#124230] border border-emerald-500/50 text-[#00F59B] text-xs font-bold rounded-xl flex items-center gap-1 transition-colors"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Adicionar App para Ele
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { setIsSelectingFromCatalog(!isSelectingFromCatalog); setIsAddingAppToClient(false); }}
+                        className="py-1.5 px-3 bg-[#0a2318] hover:bg-[#0e2e20] border border-emerald-700/60 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-1 transition-colors"
+                      >
+                        <Layers className="w-3.5 h-3.5" /> Do Catálogo Global
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setIsAddingAppToClient(true); setIsSelectingFromCatalog(false); }}
+                        className="py-1.5 px-3 bg-[#0c2f21] hover:bg-[#124230] border border-emerald-500/50 text-[#00F59B] text-xs font-bold rounded-xl flex items-center gap-1 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> App Personalizado
+                      </button>
+                    </div>
                   </div>
+
+                  {/* SELECT FROM GLOBAL CATALOG */}
+                  {isSelectingFromCatalog && (
+                    <div className="p-4 bg-[#071a11] border border-emerald-700/50 rounded-2xl space-y-3 animate-fadeIn">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-white">Selecionar Apps do Catálogo Global:</span>
+                        <button type="button" onClick={() => setIsSelectingFromCatalog(false)} className="text-slate-400 hover:text-white text-xs">✕ Fechar</button>
+                      </div>
+                      <p className="text-[10px] text-slate-400">Marque os apps que deseja liberar para este cliente. Clique em "Adicionar Selecionados" para confirmar.</p>
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                        {apps.map((catalogApp) => {
+                          const isAlreadyAdded = cCustomApps.some(a => a.name === catalogApp.name);
+                          return (
+                            <div key={catalogApp.id} className={`flex items-center gap-3 p-3 rounded-xl border transition-all cursor-pointer ${isAlreadyAdded ? 'bg-emerald-950/60 border-emerald-700/60' : 'bg-[#0a1e16] border-emerald-950 hover:border-emerald-700/40'}`}
+                              onClick={() => {
+                                if (isAlreadyAdded) {
+                                  setCCustomApps(prev => prev.filter(a => a.name !== catalogApp.name));
+                                } else {
+                                  const newApp: ClientApp = {
+                                    ...catalogApp,
+                                    id: `app-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+                                  };
+                                  setCCustomApps(prev => [...prev, newApp]);
+                                }
+                              }}
+                            >
+                              <div className="w-10 h-10 rounded-xl bg-[#061510] border border-emerald-900/50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                                {catalogApp.iconUrl ? (
+                                  <img src={catalogApp.iconUrl} alt={catalogApp.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-lg">
+                                    {catalogApp.platform === 'android' ? '🤖' : catalogApp.platform === 'ios' ? '🍎' : catalogApp.platform === 'smart-tv' ? '📺' : catalogApp.platform === 'tv-box' ? '📦' : catalogApp.platform === 'windows' ? '🖥️' : '🌐'}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <span className="font-bold text-white text-xs block truncate">{catalogApp.name}</span>
+                                <span className="text-[10px] text-slate-400 truncate block">{catalogApp.subtitle}</span>
+                              </div>
+                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${isAlreadyAdded ? 'bg-[#00F59B] border-[#00F59B]' : 'border-emerald-700'}`}>
+                                {isAlreadyAdded && <Check className="w-3 h-3 text-slate-950" />}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-emerald-400 font-semibold">{cCustomApps.length} apps selecionados para este cliente.</p>
+                    </div>
+                  )}
 
                   {/* Quick Preset Buttons for this client */}
                   <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -2482,55 +2544,143 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   version: appVersion,
                   status: 'ativo',
                   downloadUrl: appDownloadUrl || undefined,
+                  iconUrl: appIconUrl || undefined,
                   pairingCode: appPairingCode || undefined,
-                  instructions: ['Instale e acesse com seus dados'],
+                  instructions: ['Instale e acesse com seus dados de login'],
                 });
                 setIsAppFormOpen(false);
+                setAppName('');
+                setAppIconUrl('');
+                setAppDownloadUrl('');
+                setAppPairingCode('');
                 showNotification('App adicionado ao catálogo geral!');
-              }} className="bg-[#091d15] border border-emerald-600/50 p-6 rounded-3xl space-y-3 text-xs">
-                <div className="grid grid-cols-2 gap-3">
+              }} className="bg-[#091d15] border border-emerald-600/50 p-6 rounded-3xl space-y-4 text-xs">
+                <h4 className="text-sm font-bold text-white">Novo App no Catálogo Global</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-slate-300 mb-1">Nome:</label>
+                    <label className="block text-slate-300 font-semibold mb-1">Nome do App *:</label>
                     <input
                       type="text"
                       required
+                      placeholder="Ex: Zuxo Player para Android"
                       value={appName}
                       onChange={(e) => setAppName(e.target.value)}
-                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white"
+                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white outline-none focus:border-[#00F59B]"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-300 mb-1">Plataforma:</label>
+                    <label className="block text-slate-300 font-semibold mb-1">Plataforma:</label>
                     <select
                       value={appPlatform}
                       onChange={(e) => setAppPlatform(e.target.value as any)}
-                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white"
+                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white outline-none focus:border-[#00F59B]"
                     >
-                      <option value="android">Android</option>
-                      <option value="ios">iOS</option>
-                      <option value="smart-tv">Smart TV</option>
-                      <option value="tv-box">TV Box</option>
-                      <option value="windows">Windows PC</option>
+                      <option value="android">Android (Play Store / APK)</option>
+                      <option value="ios">iOS / iPadOS (App Store)</option>
+                      <option value="smart-tv">Smart TV (LG / Samsung / Roku)</option>
+                      <option value="tv-box">FireStick / TV Box</option>
+                      <option value="windows">Windows PC (Microsoft Store)</option>
+                      <option value="web">Web / macOS</option>
                     </select>
                   </div>
                 </div>
-                <div className="flex justify-end gap-2">
-                  <button type="button" onClick={() => setIsAppFormOpen(false)} className="px-4 py-2 bg-slate-800 rounded-xl">Cancelar</button>
-                  <button type="submit" className="px-5 py-2 bg-[#00F59B] text-slate-950 font-bold rounded-xl">Salvar</button>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Subtítulo (descrição curta):</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Google Play Store Oficial (Celulares e Tablets)"
+                    value={appSubtitle}
+                    onChange={(e) => setAppSubtitle(e.target.value)}
+                    className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white outline-none focus:border-[#00F59B]"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">URL da Logo / Ícone do App:</label>
+                    <input
+                      type="url"
+                      placeholder="https://... (imagem do ícone do app)"
+                      value={appIconUrl}
+                      onChange={(e) => setAppIconUrl(e.target.value)}
+                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-[#00F59B]"
+                    />
+                    {appIconUrl && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <img src={appIconUrl} alt="Preview" className="w-10 h-10 rounded-xl object-cover border border-emerald-800" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                        <span className="text-[10px] text-emerald-400">Preview do ícone</span>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 font-semibold mb-1">Link de Download (Play Store / App Store):</label>
+                    <input
+                      type="url"
+                      placeholder="https://play.google.com/... ou https://apps.apple.com/..."
+                      value={appDownloadUrl}
+                      onChange={(e) => setAppDownloadUrl(e.target.value)}
+                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white font-mono outline-none focus:border-[#00F59B]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Código de Pareamento / Downloader (opcional):</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: Código Downloader: 84920"
+                    value={appPairingCode}
+                    onChange={(e) => setAppPairingCode(e.target.value)}
+                    className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white outline-none focus:border-[#00F59B]"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2 border-t border-emerald-950">
+                  <button type="button" onClick={() => setIsAppFormOpen(false)} className="px-4 py-2 bg-slate-800 text-slate-300 hover:text-white rounded-xl transition-colors">Cancelar</button>
+                  <button type="submit" className="px-5 py-2 bg-[#00F59B] text-slate-950 font-bold rounded-xl">Salvar no Catálogo</button>
                 </div>
               </form>
             )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {apps.map((app) => (
-                <div key={app.id} className="p-4 bg-[#0a1e16] border border-emerald-950 rounded-2xl flex items-center justify-between">
-                  <div>
-                    <h4 className="font-bold text-white text-sm">{app.name}</h4>
-                    <p className="text-xs text-slate-400">{app.subtitle}</p>
+                <div key={app.id} className="p-4 bg-[#0a1e16] border border-emerald-950 hover:border-emerald-700/60 rounded-2xl flex items-start gap-3 transition-all group">
+                  {/* Logo */}
+                  <div className="w-14 h-14 rounded-2xl bg-[#061510] border border-emerald-900/50 flex items-center justify-center flex-shrink-0 overflow-hidden">
+                    {app.iconUrl ? (
+                      <img src={app.iconUrl} alt={app.name} className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display='none'; }} />
+                    ) : (
+                      <span className="text-2xl">
+                        {app.platform === 'android' ? '🤖' : app.platform === 'ios' ? '🍎' : app.platform === 'smart-tv' ? '📺' : app.platform === 'tv-box' ? '📦' : app.platform === 'windows' ? '🖥️' : '🌐'}
+                      </span>
+                    )}
                   </div>
-                  <button onClick={() => onDeleteApp(app.id)} className="p-2 text-red-400 hover:text-white">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-white text-sm truncate">{app.name}</h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5 truncate">{app.subtitle}</p>
+                      </div>
+                      <button onClick={() => onDeleteApp(app.id)} className="p-1.5 text-red-400 hover:text-white hover:bg-red-950/60 rounded-lg transition-colors flex-shrink-0" title="Remover do catálogo">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        app.platform === 'android' ? 'bg-green-950 text-green-300 border border-green-800' :
+                        app.platform === 'ios' ? 'bg-blue-950 text-blue-300 border border-blue-800' :
+                        app.platform === 'smart-tv' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' :
+                        app.platform === 'tv-box' ? 'bg-orange-950 text-orange-300 border border-orange-800' :
+                        app.platform === 'windows' ? 'bg-sky-950 text-sky-300 border border-sky-800' :
+                        'bg-slate-800 text-slate-300 border border-slate-700'
+                      }`}>
+                        {app.platform === 'android' ? 'Android' : app.platform === 'ios' ? 'iOS' : app.platform === 'smart-tv' ? 'Smart TV' : app.platform === 'tv-box' ? 'TV Box' : app.platform === 'windows' ? 'Windows' : 'Web'}
+                      </span>
+                      {app.downloadUrl && (
+                        <a href={app.downloadUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-[#00F59B] transition-colors">
+                          <ExternalLink className="w-3 h-3" />
+                          Loja
+                        </a>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

@@ -749,81 +749,126 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {clientApps.map((app) => (
-                <div
-                  key={app.id}
-                  className="bg-[#0a1e16] border border-emerald-950 hover:border-emerald-700/60 rounded-3xl p-5 flex flex-col justify-between transition-all group"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="w-12 h-12 rounded-2xl bg-[#06140e] border border-emerald-800/40 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
-                        {app.platform === 'android' && <Smartphone className="w-6 h-6" />}
-                        {app.platform === 'ios' && <Smartphone className="w-6 h-6 text-slate-300" />}
-                        {app.platform === 'smart-tv' && <Tv className="w-6 h-6 text-[#00F59B]" />}
-                        {app.platform === 'tv-box' && <Box className="w-6 h-6 text-amber-400" />}
-                        {app.platform === 'windows' && <Monitor className="w-6 h-6 text-blue-400" />}
-                        {app.platform === 'web' && <Layers className="w-6 h-6 text-cyan-400" />}
-                      </div>
-                      <span className="px-2.5 py-0.5 bg-emerald-950 text-emerald-300 border border-emerald-800/60 rounded-full text-[10px] font-bold uppercase">
-                        v{app.version}
-                      </span>
-                    </div>
+              {clientApps.map((app) => {
+                const storeLabel =
+                  app.platform === 'android' ? 'Instalar na Google Play' :
+                  app.platform === 'ios' ? 'Instalar na App Store' :
+                  app.platform === 'windows' ? 'Instalar na Microsoft Store' :
+                  app.platform === 'web' ? 'Instalar na Mac App Store' :
+                  app.platform === 'smart-tv' ? 'Acessar na Smart TV' :
+                  'Baixar Aplicativo';
 
-                    <h4 className="text-base font-bold text-white font-display mb-0.5">
-                      {app.name}
-                    </h4>
-                    <p className="text-xs text-slate-400 mb-4">
-                      {app.subtitle}
-                    </p>
+                const storeBadgeColor =
+                  app.platform === 'android' ? 'from-green-500 to-emerald-500' :
+                  app.platform === 'ios' ? 'from-blue-500 to-sky-400' :
+                  app.platform === 'windows' ? 'from-sky-500 to-blue-400' :
+                  app.platform === 'smart-tv' ? 'from-cyan-500 to-teal-400' :
+                  app.platform === 'tv-box' ? 'from-orange-500 to-amber-400' :
+                  'from-emerald-500 to-[#00F59B]';
 
-                    <div className="bg-[#06140e] border border-emerald-950 p-3 rounded-2xl mb-4 text-[11px] text-slate-300 space-y-1.5">
-                      <span className="font-bold text-emerald-400 block text-[10px] uppercase">Como Instalar:</span>
-                      {app.instructions.map((inst, idx) => (
-                        <div key={idx} className="flex items-start gap-1.5">
-                          <span className="text-emerald-500 font-bold">{idx + 1}.</span>
-                          <span>{inst}</span>
+                return (
+                  <div
+                    key={app.id}
+                    className="bg-[#0a1e16] border border-emerald-950 hover:border-emerald-700/60 rounded-3xl p-5 flex flex-col justify-between transition-all group"
+                  >
+                    <div>
+                      {/* Header: logo + version */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="w-16 h-16 rounded-2xl bg-[#06140e] border border-emerald-800/40 flex items-center justify-center overflow-hidden group-hover:scale-105 transition-transform flex-shrink-0">
+                          {app.iconUrl ? (
+                            <img
+                              src={app.iconUrl}
+                              alt={app.name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                                e.currentTarget.parentElement!.innerHTML = `<span class="text-2xl">${app.platform === 'android' ? '🤖' : app.platform === 'ios' ? '🍎' : app.platform === 'smart-tv' ? '📺' : app.platform === 'tv-box' ? '📦' : app.platform === 'windows' ? '🖥️' : '🌐'}</span>`;
+                              }}
+                            />
+                          ) : (
+                            <span className="text-2xl">
+                              {app.platform === 'android' ? '🤖' :
+                               app.platform === 'ios' ? '🍎' :
+                               app.platform === 'smart-tv' ? '📺' :
+                               app.platform === 'tv-box' ? '📦' :
+                               app.platform === 'windows' ? '🖥️' : '🌐'}
+                            </span>
+                          )}
                         </div>
-                      ))}
+
+                        <div className="flex flex-col items-end gap-1.5">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            app.platform === 'android' ? 'bg-green-950 text-green-300 border border-green-800' :
+                            app.platform === 'ios' ? 'bg-blue-950 text-blue-300 border border-blue-800' :
+                            app.platform === 'smart-tv' ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' :
+                            app.platform === 'tv-box' ? 'bg-orange-950 text-orange-300 border border-orange-800' :
+                            app.platform === 'windows' ? 'bg-sky-950 text-sky-300 border border-sky-800' :
+                            'bg-slate-800 text-slate-300 border border-slate-700'
+                          }`}>
+                            {app.platform === 'android' ? 'Android' :
+                             app.platform === 'ios' ? 'iOS / iPadOS' :
+                             app.platform === 'smart-tv' ? 'Smart TV' :
+                             app.platform === 'tv-box' ? 'TV Box / Fire' :
+                             app.platform === 'windows' ? 'Windows' : 'macOS / Web'}
+                          </span>
+                          <span className="px-2 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800/60 rounded-full text-[10px] font-mono">
+                            {app.version}
+                          </span>
+                        </div>
+                      </div>
+
+                      <h4 className="text-base font-bold text-white font-display mb-0.5">
+                        {app.name}
+                      </h4>
+                      <p className="text-xs text-slate-400 mb-4">
+                        {app.subtitle}
+                      </p>
+
+                      <div className="bg-[#06140e] border border-emerald-950 p-3 rounded-2xl mb-4 text-[11px] text-slate-300 space-y-1.5">
+                        <span className="font-bold text-emerald-400 block text-[10px] uppercase">Como Instalar:</span>
+                        {app.instructions.map((inst, idx) => (
+                          <div key={idx} className="flex items-start gap-1.5">
+                            <span className="text-emerald-500 font-bold flex-shrink-0">{idx + 1}.</span>
+                            <span>{inst}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {app.pairingCode && (
+                        <div className="flex items-center justify-between bg-[#081a13] border border-emerald-900/60 p-2.5 rounded-xl mb-4">
+                          <span className="text-xs font-mono font-bold text-[#00F59B]">{app.pairingCode}</span>
+                          <button
+                            onClick={() => handleCopy(app.pairingCode!, app.id)}
+                            className="p-1 text-slate-400 hover:text-white"
+                            title="Copiar Código"
+                          >
+                            {copiedText === app.id ? <Check className="w-4 h-4 text-[#00F59B]" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {app.pairingCode && (
-                      <div className="flex items-center justify-between bg-[#081a13] border border-emerald-900/60 p-2.5 rounded-xl mb-4">
-                        <span className="text-xs font-mono font-bold text-[#00F59B]">{app.pairingCode}</span>
+                    <div className="pt-2">
+                      {app.downloadUrl ? (
                         <button
-                          onClick={() => handleCopy(app.pairingCode!, app.id)}
-                          className="p-1 text-slate-400 hover:text-white"
-                          title="Copiar Código"
+                          onClick={() => handleDownloadApp(app)}
+                          className={`w-full py-3 bg-gradient-to-r ${storeBadgeColor} hover:brightness-110 text-white font-bold text-xs uppercase tracking-wide rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-95 cursor-pointer`}
                         >
-                          {copiedText === app.id ? <Check className="w-4 h-4 text-[#00F59B]" /> : <Copy className="w-4 h-4" />}
+                          <ExternalLink className="w-4 h-4" />
+                          {storeLabel}
                         </button>
-                      </div>
-                    )}
+                      ) : (
+                        <button
+                          onClick={() => handleCopy(app.pairingCode || 'ZX-84920', app.id)}
+                          className="w-full py-2.5 bg-[#0f2e21] hover:bg-[#153f2e] border border-emerald-600/50 text-[#00F59B] font-bold text-xs uppercase tracking-wide rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
+                        >
+                          <Copy className="w-4 h-4" /> Copiar Código de Pareamento
+                        </button>
+                      )}
+                    </div>
                   </div>
-
-                  <div className="pt-2">
-                    {app.downloadUrl ? (
-                      <button
-                        onClick={() => handleDownloadApp(app)}
-                        className="w-full py-2.5 bg-gradient-to-r from-emerald-500 to-[#00F59B] hover:brightness-110 text-slate-950 font-bold text-xs uppercase tracking-wide rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
-                      >
-                        <ExternalLink className="w-4 h-4" />
-                        {app.platform === 'android' ? 'Instalar na Google Play' :
-                         app.platform === 'ios' ? 'Instalar na App Store' :
-                         app.platform === 'windows' ? 'Instalar na Microsoft Store' :
-                         app.platform === 'web' && app.name.includes('macOS') ? 'Instalar na Mac App Store' :
-                         'Acessar Loja Oficial'}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handleCopy(app.pairingCode || 'ZX-84920', app.id)}
-                        className="w-full py-2.5 bg-[#0f2e21] hover:bg-[#153f2e] border border-emerald-600/50 text-[#00F59B] font-bold text-xs uppercase tracking-wide rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-sm active:scale-95 cursor-pointer"
-                      >
-                        <Copy className="w-4 h-4" /> Copiar Código de Pareamento
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
