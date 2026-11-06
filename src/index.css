@@ -6,6 +6,13 @@
     background-color: #040c09;
     color: #f1f5f9;
     overflow-x: hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (display-mode: standalone) {
+    body {
+      overscroll-behavior-y: none;
+    }
   }
 
   h1, h2, h3, .font-display {

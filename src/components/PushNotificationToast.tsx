@@ -41,7 +41,7 @@ export const PushNotificationToast: React.FC<PushNotificationToastProps> = ({
   const isExpiring = notification.type === 'expiration_warning' || notification.type === 'plan_expired';
 
   return (
-    <div className="fixed top-4 right-4 z-[9999] max-w-sm w-full mx-auto sm:w-96 animate-in slide-in-from-top duration-300">
+    <div className="fixed top-[max(1rem,env(safe-area-inset-top))] inset-x-4 sm:left-auto sm:w-96 z-[9999] animate-in slide-in-from-top duration-300">
       <div className={`p-4 rounded-2xl border shadow-2xl backdrop-blur-xl transition-all ${
         isInvoice 
           ? 'bg-[#051a11]/95 border-[#00F59B]/60 shadow-[0_0_30px_rgba(0,245,155,0.25)]' 

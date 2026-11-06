@@ -73,7 +73,7 @@ export async function requestPushPermissionAndGetToken(clientId?: string): Promi
 
     if (messagingInstance && 'serviceWorker' in navigator) {
       try {
-        const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', {
+        const registration = await navigator.serviceWorker.register('/sw.js', {
           scope: '/'
         }).catch((err) => {
           console.warn('[FCM] ServiceWorker register fallback:', err);

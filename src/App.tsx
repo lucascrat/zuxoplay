@@ -55,6 +55,7 @@ import {
 } from './services/notificationService';
 import { setupFCMForegroundListener } from './services/fcmService';
 import { PushNotificationToast } from './components/PushNotificationToast';
+import { InstallPwaPrompt } from './components/InstallPwaPrompt';
 import { TrailerItem, ClientApp, ProgramItem, ViewScreen, UserProfile, PushNotification, Invoice, SystemLog } from './types';
 import { soundEffects } from './utils/audio';
 import { INITIAL_SYSTEM_LOGS } from './data/appData';
@@ -62,9 +63,16 @@ import { syncDailyProgramGuide, startEpgAutoTicker } from './services/epgService
 
 const DEFAULT_USER: UserProfile = INITIAL_CLIENTS[0];
 
+const DEEP_LINK_SCREENS: ViewScreen[] = ['trailer-feed', 'customer-portal', 'daily-guide', 'admin-panel'];
+
+function getInitialScreen(): ViewScreen {
+  const requested = new URLSearchParams(window.location.search).get('screen') as ViewScreen | null;
+  return requested && DEEP_LINK_SCREENS.includes(requested) ? requested : 'trailer-feed';
+}
+
 export default function App() {
   // Main default screen is the 9:16 mobile trailers feed
-  const [activeScreen, setActiveScreen] = useState<ViewScreen>('trailer-feed');
+  const [activeScreen, setActiveScreen] = useState<ViewScreen>(getInitialScreen);
 
   // REGISTERED CLIENTS STATE (Managed by admin with real apps, screens, prices)
   const [clients, setClients] = useState<UserProfile[]>(() => {
@@ -567,7 +575,7 @@ export default function App() {
         Zone 2: 4-5 concise single-line nav links
         Zone 3: 1 primary action button (Customer / Login)
       */}
-      <header className="h-16 shrink-0 bg-[#061610]/95 backdrop-blur-md border-b border-emerald-950/80 px-4 sm:px-6 flex items-center justify-between gap-8 z-40 sticky top-0">
+      <header className="h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] shrink-0 bg-[#061610]/95 backdrop-blur-md border-b border-emerald-950/80 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 flex items-center justify-between gap-8 z-40 sticky top-0">
         
         {/* Zone 1: Brand wordmark */}
         <a 
@@ -680,7 +688,7 @@ export default function App() {
       </header>
 
       {/* MAIN VIEWPORT ROUTER */}
-      <main className="flex-1 flex flex-col w-full relative">
+      <main className="flex-1 flex flex-col w-full relative pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
         {/* TELA PRINCIPAL: FEED DE TRAILERS 9:16 */}
         {activeScreen === 'trailer-feed' && (
           <TrailerFeedScreen
@@ -808,6 +816,36 @@ export default function App() {
           )
         )}
       </main>
+
+      <nav className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-[#061610]/95 backdrop-blur-md border-t border-emerald-950/80 pb-[env(safe-area-inset-bottom)]">
+        <div className="h-16 grid grid-cols-4">
+          {[
+            { screen: 'trailer-feed' as ViewScreen, label: 'Feed', icon: Flame, onClick: () => { soundEffects.playClick(); setActiveScreen('trailer-feed'); } },
+            { screen: 'customer-portal' as ViewScreen, label: 'Cliente', icon: User, onClick: handleAccessCustomerPortal },
+            { screen: 'daily-guide' as ViewScreen, label: 'Grade', icon: Calendar, onClick: () => { soundEffects.playClick(); setActiveScreen('daily-guide'); } },
+            { screen: 'admin-panel' as ViewScreen, label: 'Admin', icon: Layers, onClick: handleAccessAdminPanel },
+          ].map(({ screen, label, icon: Icon, onClick }) => {
+            const isActive = activeScreen === screen;
+            return (
+              <button
+                key={screen}
+                onClick={onClick}
+                aria-current={isActive ? 'page' : undefined}
+                className={`flex flex-col items-center justify-center gap-1 text-[11px] font-bold transition-colors ${
+                  isActive ? 'text-[#00F59B]' : 'text-slate-400 active:text-white'
+                }`}
+              >
+                <span className={`flex items-center justify-center w-12 h-7 rounded-full transition-colors ${isActive ? 'bg-emerald-950 border border-emerald-700/50' : ''}`}>
+                  <Icon className="w-5 h-5" />
+                </span>
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      <InstallPwaPrompt />
 
       {/* LOGIN & CADASTRO MODAL */}
       <AuthScreen

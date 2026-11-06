@@ -1,0 +1,34 @@
+{
+  "id": "/",
+  "name": "Zuxo Player",
+  "short_name": "Zuxo",
+  "description": "Filmes, séries, canais e esportes com a melhor qualidade. Área do cliente, grade do dia e trailers.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#030907",
+  "theme_color": "#061610",
+  "categories": ["entertainment", "video"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Área do Cliente",
+      "short_name": "Cliente",
+      "url": "/?screen=customer-portal",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Grade do Dia",
+      "short_name": "Grade",
+      "url": "/?screen=daily-guide",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
