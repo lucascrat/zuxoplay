@@ -41,7 +41,16 @@ export async function seedInitialFirestoreData() {
       }
     }
 
-    // 2. Trailers
+    // 2. Trailers — upsert current list; remove old default IDs no longer in INITIAL_TRAILERS.
+    // Admin-added trailers (not listed here) are intentionally preserved.
+    const DEPRECATED_TRAILER_IDS = [
+      'tr-avatar2', 'tr-strangerthings5', 'tr-houseofdragon',
+      'tr-shogun', 'tr-johnwick4', 'tr-avengers-endgame',
+      'tr-matrix', 'tr-interstellar', 'tr-multiverse',
+    ];
+    await Promise.all(DEPRECATED_TRAILER_IDS.map((id) =>
+      deleteDoc(doc(db, 'trailers', id)).catch(() => {})
+    ));
     for (const trailer of INITIAL_TRAILERS) {
       await setDoc(doc(db, 'trailers', trailer.id), trailer, { merge: true });
     }
