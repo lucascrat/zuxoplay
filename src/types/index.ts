@@ -65,6 +65,11 @@ export interface ClientApp {
   iconUrl?: string;
   pairingCode?: string;
   instructions: string[];
+  // Xtream / M3U access credentials set per-client by the admin
+  credProvedor?: string;
+  credUsuario?: string;
+  credSenha?: string;
+  credMac?: string;
 }
 
 export interface ProgramItem {

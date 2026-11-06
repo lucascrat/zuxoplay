@@ -201,6 +201,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newAppPairingCode, setNewAppPairingCode] = useState<string>('');
   const [newAppInstructions, setNewAppInstructions] = useState<string>('Instale o app e acesse com seus dados');
 
+  // Per-app credential editing state
+  const [editingCredAppId, setEditingCredAppId] = useState<string | null>(null);
+  const [credProvedor, setCredProvedor] = useState<string>('');
+  const [credUsuario, setCredUsuario] = useState<string>('');
+  const [credSenha, setCredSenha] = useState<string>('');
+  const [credMac, setCredMac] = useState<string>('');
+
+  // Known IPTV players for quick catalog selection
+  const IPTV_KNOWN_APPS: Array<{ name: string; platform: ClientApp['platform']; subtitle: string; downloadUrl?: string }> = [
+    { name: 'Quick Player', platform: 'android', subtitle: 'Player IPTV para Android' },
+    { name: 'Quick Player PRO', platform: 'android', subtitle: 'Versão PRO do Quick Player' },
+    { name: 'QPlay', platform: 'android', subtitle: 'QPlay IPTV Player' },
+    { name: 'Big Player', platform: 'smart-tv', subtitle: 'Big Player para Smart TV' },
+    { name: 'GTV Player', platform: 'android', subtitle: 'GTV Player IPTV' },
+    { name: 'Quick Plus+', platform: 'android', subtitle: 'Quick Plus+ Player' },
+    { name: 'RX Purple', platform: 'android', subtitle: 'RX Purple IPTV' },
+    { name: 'ZUXO Player', platform: 'android', subtitle: 'App oficial Zuxo Player', downloadUrl: 'https://play.google.com/store/apps/details?id=com.zuxoplayer.app' },
+    { name: 'CORTEX Player', platform: 'android', subtitle: 'CORTEX Player IPTV' },
+    { name: 'UTM Play', platform: 'android', subtitle: 'UTM Play IPTV' },
+  ];
+
   // TRAILER FORM STATE
   const [isTrailerFormOpen, setIsTrailerFormOpen] = useState<boolean>(false);
   const [editingTrailerId, setEditingTrailerId] = useState<string | null>(null);
@@ -502,6 +523,62 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleRemoveCustomAppFromClient = (appId: string) => {
     soundEffects.playClick();
     setCCustomApps(cCustomApps.filter((a) => a.id !== appId));
+  };
+
+  const handleOpenEditCredentials = (cApp: ClientApp) => {
+    soundEffects.playClick();
+    setEditingCredAppId(cApp.id);
+    setCredProvedor(cApp.credProvedor || cProvider);
+    setCredUsuario(cApp.credUsuario || cUsername);
+    setCredSenha(cApp.credSenha || cPassword);
+    setCredMac(cApp.credMac || '');
+  };
+
+  const handleSaveCredentials = (appId: string) => {
+    soundEffects.playSelect();
+    setCCustomApps((prev) =>
+      prev.map((a) =>
+        a.id === appId
+          ? {
+              ...a,
+              credProvedor: credProvedor.trim() || undefined,
+              credUsuario: credUsuario.trim() || undefined,
+              credSenha: credSenha.trim() || undefined,
+              credMac: credMac.trim() || undefined,
+            }
+          : a
+      )
+    );
+    setEditingCredAppId(null);
+    showNotification('✅ Credenciais de acesso salvas!');
+  };
+
+  const handleAddKnownIptvApp = (preset: typeof IPTV_KNOWN_APPS[0]) => {
+    soundEffects.playSelect();
+    const already = cCustomApps.some((a) => a.name === preset.name);
+    if (already) {
+      showNotification(`${preset.name} já está na lista.`);
+      return;
+    }
+    const newApp: ClientApp = {
+      id: `app-iptv-${Date.now()}`,
+      name: preset.name,
+      platform: preset.platform,
+      subtitle: preset.subtitle,
+      version: 'v1.0',
+      status: 'ativo',
+      downloadUrl: preset.downloadUrl,
+      instructions: [
+        'Baixe e instale o aplicativo',
+        'Abra o app e toque em "Adicionar" ou "Novo Portal"',
+        'Digite o Provedor, Usuário e Senha exibidos nos seus dados de acesso abaixo',
+      ],
+      credProvedor: cProvider || '',
+      credUsuario: cUsername || '',
+      credSenha: cPassword || '',
+    };
+    setCCustomApps((prev) => [...prev, newApp]);
+    showNotification(`${preset.name} adicionado! Configure as credenciais individuais abaixo.`);
   };
 
   // Quick preset loader for client apps
@@ -1676,43 +1753,161 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                   )}
 
+                  {/* Known IPTV Apps quick-add panel */}
+                  <div className="p-3 bg-[#060f0a] border border-emerald-900/40 rounded-xl">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block mb-2 flex items-center gap-1">
+                      <Key className="w-3 h-3" /> Players IPTV Conhecidos — Adicionar com Credenciais:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {IPTV_KNOWN_APPS.map((preset) => {
+                        const isAdded = cCustomApps.some((a) => a.name === preset.name);
+                        return (
+                          <button
+                            key={preset.name}
+                            type="button"
+                            onClick={() => isAdded
+                              ? setCCustomApps(prev => prev.filter(a => a.name !== preset.name))
+                              : handleAddKnownIptvApp(preset)
+                            }
+                            className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition-all ${
+                              isAdded
+                                ? 'bg-emerald-700/40 border-emerald-500 text-emerald-200'
+                                : 'bg-[#0a1e16] border-emerald-900/60 text-slate-300 hover:border-emerald-500'
+                            }`}
+                          >
+                            {isAdded && <Check className="w-3 h-3" />}
+                            {preset.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* List of custom apps currently assigned to this client */}
                   <div className="space-y-2">
                     {cCustomApps.map((cApp) => (
-                      <div
-                        key={cApp.id}
-                        className="p-3 bg-[#0a1e16] border border-emerald-950 rounded-xl flex items-center justify-between gap-3"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-lg bg-emerald-950 flex items-center justify-center text-[#00F59B]">
-                            {cApp.platform === 'ios' && <Smartphone className="w-4 h-4" />}
-                            {cApp.platform === 'android' && <Smartphone className="w-4 h-4 text-emerald-400" />}
-                            {cApp.platform === 'smart-tv' && <Tv className="w-4 h-4 text-[#00F59B]" />}
-                            {cApp.platform === 'tv-box' && <Box className="w-4 h-4 text-emerald-300" />}
-                            {cApp.platform === 'windows' && <Monitor className="w-4 h-4 text-emerald-400" />}
+                      <div key={cApp.id} className="bg-[#0a1e16] border border-emerald-950 rounded-xl overflow-hidden">
+                        {/* App row */}
+                        <div className="p-3 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-lg bg-emerald-950 flex items-center justify-center text-[#00F59B] flex-shrink-0">
+                              {cApp.platform === 'ios' && <Smartphone className="w-4 h-4" />}
+                              {cApp.platform === 'android' && <Smartphone className="w-4 h-4 text-emerald-400" />}
+                              {cApp.platform === 'smart-tv' && <Tv className="w-4 h-4 text-[#00F59B]" />}
+                              {cApp.platform === 'tv-box' && <Box className="w-4 h-4 text-emerald-300" />}
+                              {cApp.platform === 'windows' && <Monitor className="w-4 h-4 text-emerald-400" />}
+                              {cApp.platform === 'web' && <Monitor className="w-4 h-4 text-cyan-400" />}
+                            </div>
+                            <div>
+                              <span className="font-bold text-white text-xs block">{cApp.name}</span>
+                              <span className="text-[10px] font-mono text-slate-400">
+                                {cApp.credUsuario
+                                  ? `👤 ${cApp.credUsuario}`
+                                  : cApp.pairingCode || cApp.downloadUrl || 'Sem credenciais'}
+                              </span>
+                            </div>
                           </div>
-                          <div>
-                            <span className="font-bold text-white text-xs block">{cApp.name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {cApp.pairingCode || cApp.downloadUrl || 'Acesso configurado'}
-                            </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                editingCredAppId === cApp.id
+                                  ? setEditingCredAppId(null)
+                                  : handleOpenEditCredentials(cApp)
+                              }
+                              className={`p-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition-colors ${
+                                editingCredAppId === cApp.id
+                                  ? 'bg-emerald-700/40 border-emerald-500 text-emerald-200'
+                                  : 'bg-[#071610] border-emerald-900/60 text-emerald-400 hover:border-emerald-500'
+                              }`}
+                              title="Editar credenciais de acesso"
+                            >
+                              <Key className="w-3 h-3" />
+                              <span className="hidden sm:inline">Acesso</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveCustomAppFromClient(cApp.id)}
+                              className="p-1.5 text-red-400 hover:text-white hover:bg-red-950/60 rounded-lg transition-colors"
+                              title="Remover app deste cliente"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveCustomAppFromClient(cApp.id)}
-                          className="p-1.5 text-red-400 hover:text-white hover:bg-red-950/60 rounded-lg transition-colors"
-                          title="Remover app deste cliente"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        {/* Credential inline editor */}
+                        {editingCredAppId === cApp.id && (
+                          <div className="px-3 pb-3 pt-0 border-t border-emerald-900/40 bg-[#060f0a] space-y-2.5 animate-fadeIn">
+                            <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider pt-3 block">
+                              Dados de Acesso — {cApp.name}
+                            </span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-semibold mb-1">Provedor (URL do servidor)</label>
+                                <input
+                                  type="text"
+                                  placeholder="http://dns.servidor.com:8080"
+                                  value={credProvedor}
+                                  onChange={(e) => setCredProvedor(e.target.value)}
+                                  className="w-full bg-[#05130d] border border-emerald-900/60 rounded-xl px-3 py-1.5 text-white text-xs font-mono outline-none focus:border-[#00F59B]"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-semibold mb-1">MAC do Aparelho (opcional)</label>
+                                <input
+                                  type="text"
+                                  placeholder="00:1A:2B:3C:4D:5E"
+                                  value={credMac}
+                                  onChange={(e) => setCredMac(e.target.value)}
+                                  className="w-full bg-[#05130d] border border-emerald-900/60 rounded-xl px-3 py-1.5 text-white text-xs font-mono outline-none focus:border-[#00F59B]"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-semibold mb-1">Usuário</label>
+                                <input
+                                  type="text"
+                                  placeholder="nome_usuario"
+                                  value={credUsuario}
+                                  onChange={(e) => setCredUsuario(e.target.value)}
+                                  className="w-full bg-[#05130d] border border-emerald-900/60 rounded-xl px-3 py-1.5 text-white text-xs outline-none focus:border-[#00F59B]"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-400 font-semibold mb-1">Senha</label>
+                                <input
+                                  type="text"
+                                  placeholder="senha_de_acesso"
+                                  value={credSenha}
+                                  onChange={(e) => setCredSenha(e.target.value)}
+                                  className="w-full bg-[#05130d] border border-emerald-900/60 rounded-xl px-3 py-1.5 text-white text-xs outline-none focus:border-[#00F59B]"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveCredentials(cApp.id)}
+                                className="py-1.5 px-4 bg-gradient-to-r from-emerald-500 to-[#00F59B] text-slate-950 font-bold rounded-xl text-xs uppercase flex items-center gap-1.5"
+                              >
+                                <Check className="w-3.5 h-3.5" /> Salvar Credenciais
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingCredAppId(null)}
+                                className="py-1.5 px-3 bg-[#0a1e16] border border-emerald-900/60 text-slate-400 font-bold rounded-xl text-xs"
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
 
                     {cCustomApps.length === 0 && (
                       <p className="text-center py-4 text-slate-400 text-xs">
-                        Nenhum app atribuído individualmente ainda. Clique em "Adicionar App para Ele" acima.
+                        Nenhum app atribuído individualmente ainda. Use os botões acima para adicionar players IPTV.
                       </p>
                     )}
                   </div>

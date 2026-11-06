@@ -116,6 +116,16 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   const [lastPaidInvoice, setLastPaidInvoice] = useState<Invoice | null>(null);
   const [receiptModalInvoice, setReceiptModalInvoice] = useState<Invoice | null>(null);
   const [downloadingAppId, setDownloadingAppId] = useState<string | null>(null);
+  const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
+
+  const togglePasswordVisibility = (appId: string) => {
+    setVisiblePasswords((prev) => {
+      const next = new Set(prev);
+      if (next.has(appId)) next.delete(appId);
+      else next.add(appId);
+      return next;
+    });
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -866,6 +876,92 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                         </button>
                       )}
                     </div>
+
+                    {/* ACCESS CREDENTIALS — shown when admin filled them in */}
+                    {(app.credProvedor || app.credUsuario || app.credSenha || app.credMac) && (
+                      <div className="mt-4 bg-[#030d09] border border-emerald-700/50 rounded-2xl overflow-hidden">
+                        <div className="flex items-center gap-2 px-3 py-2 border-b border-emerald-900/60 bg-emerald-950/40">
+                          <Key className="w-3.5 h-3.5 text-[#00F59B]" />
+                          <span className="text-[11px] font-black uppercase tracking-widest text-[#00F59B]">Dados de Acesso no App</span>
+                        </div>
+                        <div className="p-3 space-y-2">
+                          {app.credProvedor && (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Provedor / Servidor</span>
+                                <span className="text-xs font-mono text-emerald-300 break-all">{app.credProvedor}</span>
+                              </div>
+                              <button
+                                onClick={() => handleCopy(app.credProvedor!, `${app.id}-prov`)}
+                                className="p-1.5 flex-shrink-0 text-slate-400 hover:text-[#00F59B] transition-colors"
+                                title="Copiar Provedor"
+                              >
+                                {copiedText === `${app.id}-prov` ? <Check className="w-3.5 h-3.5 text-[#00F59B]" /> : <Copy className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          )}
+                          {app.credUsuario && (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Usuário</span>
+                                <span className="text-xs font-mono text-white">{app.credUsuario}</span>
+                              </div>
+                              <button
+                                onClick={() => handleCopy(app.credUsuario!, `${app.id}-user`)}
+                                className="p-1.5 flex-shrink-0 text-slate-400 hover:text-[#00F59B] transition-colors"
+                                title="Copiar Usuário"
+                              >
+                                {copiedText === `${app.id}-user` ? <Check className="w-3.5 h-3.5 text-[#00F59B]" /> : <Copy className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          )}
+                          {app.credSenha && (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Senha</span>
+                                <span className="text-xs font-mono text-white">
+                                  {visiblePasswords.has(app.id) ? app.credSenha : '●'.repeat(Math.min(app.credSenha.length, 12))}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <button
+                                  onClick={() => togglePasswordVisibility(app.id)}
+                                  className="p-1.5 text-slate-400 hover:text-white transition-colors"
+                                  title={visiblePasswords.has(app.id) ? 'Ocultar senha' : 'Ver senha'}
+                                >
+                                  {visiblePasswords.has(app.id) ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                </button>
+                                <button
+                                  onClick={() => handleCopy(app.credSenha!, `${app.id}-pass`)}
+                                  className="p-1.5 text-slate-400 hover:text-[#00F59B] transition-colors"
+                                  title="Copiar Senha"
+                                >
+                                  {copiedText === `${app.id}-pass` ? <Check className="w-3.5 h-3.5 text-[#00F59B]" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          {app.credMac && (
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="text-[9px] text-slate-500 uppercase tracking-wider block">MAC do Aparelho</span>
+                                <span className="text-xs font-mono text-amber-300">{app.credMac}</span>
+                              </div>
+                              <button
+                                onClick={() => handleCopy(app.credMac!, `${app.id}-mac`)}
+                                className="p-1.5 flex-shrink-0 text-slate-400 hover:text-amber-300 transition-colors"
+                                title="Copiar MAC"
+                              >
+                                {copiedText === `${app.id}-mac` ? <Check className="w-3.5 h-3.5 text-amber-300" /> : <Copy className="w-3.5 h-3.5" />}
+                              </button>
+                            </div>
+                          )}
+                          <div className="pt-1 border-t border-emerald-900/40 text-[10px] text-slate-500 leading-relaxed">
+                            💡 Abra o app → <strong className="text-slate-400">Adicionar</strong> → insira Provedor, Usuário e Senha acima.
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
