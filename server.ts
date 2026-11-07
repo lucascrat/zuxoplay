@@ -624,6 +624,27 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
   }
 });
 
+// Debug: testa conectividade com Evolution API e DeepSeek (remover após diagnóstico)
+app.get('/api/whatsapp/debug', async (_req: Request, res: Response) => {
+  const result: Record<string, unknown> = {
+    EVO_API_URL_set: !!EVO_API_URL,
+    EVO_API_KEY_set: !!EVO_API_KEY,
+    EVO_INSTANCE: EVO_INSTANCE,
+    DEEPSEEK_API_KEY_set: !!DEEPSEEK_API_KEY,
+  };
+  try {
+    const r = await fetch(`${EVO_API_URL}/instance/fetchInstances`, {
+      headers: { apikey: EVO_API_KEY },
+    });
+    result.evo_reach = r.status;
+    result.evo_ok = r.ok;
+  } catch (e: any) {
+    result.evo_reach = 'ERRO';
+    result.evo_error = e?.message;
+  }
+  res.json(result);
+});
+
 // Admin: listar alertas de comprovantes não lidos
 app.get('/api/whatsapp/alerts', (_req: Request, res: Response) => {
   const unread = waAlerts
