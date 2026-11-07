@@ -532,6 +532,136 @@ async function checkReceiptWithAI(base64: string, mime: string): Promise<{ isRec
   }
 }
 
+interface WaLine {
+  username: string;
+  plan: string;
+  expDate: string;
+  status: number;
+  isTrial: number;
+  maxConnections: number;
+}
+
+interface WaSession {
+  history: { role: 'user' | 'assistant'; content: string }[];
+  usernames: Set<string>;
+  lines: WaLine[];
+  fetchedAt: number;
+  lastSeen: number;
+}
+
+const waSessions = new Map<string, WaSession>();
+const WA_SESSION_IDLE_MS = 2 * 60 * 60 * 1000;
+const WA_LINES_TTL_MS = 5 * 60 * 1000;
+const WA_HISTORY_MAX = 12;
+
+function getWaSession(phone: string): WaSession {
+  const now = Date.now();
+  let s = waSessions.get(phone);
+  if (!s || now - s.lastSeen > WA_SESSION_IDLE_MS) {
+    s = { history: [], usernames: new Set(), lines: [], fetchedAt: 0, lastSeen: now };
+    waSessions.set(phone, s);
+  }
+  s.lastSeen = now;
+  return s;
+}
+
+// WhatsApp costuma omitir o nono dígito (55 88 9375-9083); o WManage guarda com ele
+function normalizeBrPhone(raw: string): string {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.length === 10 || d.length === 11) d = '55' + d;
+  if (d.startsWith('55') && d.length === 12) d = d.slice(0, 4) + '9' + d.slice(4);
+  return d;
+}
+
+function toWaLine(item: any): WaLine {
+  return {
+    username: item.username,
+    plan: item.plan?.name || '',
+    expDate: item.exp_date,
+    status: item.status,
+    isTrial: item.is_trial,
+    maxConnections: item.max_connections,
+  };
+}
+
+async function searchWzLines(term: string, perPage = 10): Promise<any[]> {
+  try {
+    const { status, json } = await wzFetch('GET', `/lines?${new URLSearchParams({ generalSearch: term, quantityPerPage: String(perPage) })}`);
+    if (status !== 200) {
+      console.error(`[WA Bot] WManage busca "${term}" retornou ${status}`);
+      return [];
+    }
+    return Array.isArray(json?.items) ? json.items : [];
+  } catch (err) {
+    console.error('[WA Bot] WManage busca falhou:', err);
+    return [];
+  }
+}
+
+async function findLinesByPhone(phone: string): Promise<WaLine[]> {
+  const digits = phone.replace(/@.*/, '').replace(/\D/g, '');
+  if (digits.length < 8) return [];
+  const target = normalizeBrPhone(digits);
+  // Últimos 8 dígitos acham "5588993759083"; últimos 4 acham formatados como "+55 88 99708-8198"
+  const [a, b] = await Promise.all([searchWzLines(digits.slice(-8)), searchWzLines(digits.slice(-4), 50)]);
+  const seen = new Set<string>();
+  return [...a, ...b]
+    .filter((i) => i.whatsapp && normalizeBrPhone(i.whatsapp) === target && !seen.has(i.username) && seen.add(i.username))
+    .map(toWaLine);
+}
+
+async function findLineByUsername(username: string): Promise<WaLine | null> {
+  const items = await searchWzLines(username);
+  const hit = items.find((i) => String(i.username).toLowerCase() === username.toLowerCase());
+  return hit ? toWaLine(hit) : null;
+}
+
+// Palavras com letra e número (ex.: b19h749) ou a palavra logo após "usuário"/"login"/"user"
+function usernameCandidates(text: string): string[] {
+  const out = new Set<string>();
+  const afterKeyword = text.match(/(?:usu[aá]rio|login|user)\s*(?:[ée]|:)?\s*([a-z0-9._-]{3,40})/i);
+  if (afterKeyword) out.add(afterKeyword[1]);
+  for (const t of text.match(/[a-z0-9._-]{4,40}/gi) || []) {
+    if (/[a-z]/i.test(t) && /\d/.test(t)) out.add(t);
+  }
+  return [...out].slice(0, 3);
+}
+
+async function resolveWaLines(session: WaSession, phone: string, text: string) {
+  if (Date.now() - session.fetchedAt > WA_LINES_TTL_MS) {
+    const byPhone = await findLinesByPhone(phone);
+    const byUser = await Promise.all([...session.usernames].map(findLineByUsername));
+    const all = [...byPhone, ...byUser.filter((l): l is WaLine => !!l)];
+    session.lines = all.filter((l, i) => all.findIndex((o) => o.username === l.username) === i);
+    session.fetchedAt = Date.now();
+  }
+  const known = new Set(session.lines.map((l) => l.username.toLowerCase()));
+  for (const cand of usernameCandidates(text)) {
+    if (known.has(cand.toLowerCase())) continue;
+    const line = await findLineByUsername(cand);
+    if (line) {
+      session.usernames.add(line.username);
+      session.lines.push(line);
+      known.add(line.username.toLowerCase());
+    }
+  }
+}
+
+function describeWaLines(lines: WaLine[]): string {
+  if (!lines.length) {
+    return 'CLIENTE NÃO IDENTIFICADO: o número dele não está cadastrado e ele ainda não informou um usuário válido. ' +
+      'Se a pergunta for sobre a conta dele (vencimento, plano, renovação, acesso), peça o nome de usuário de acesso.';
+  }
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const rows = lines.map((l) => {
+    const days = Math.ceil((new Date(l.expDate).getTime() - Date.now()) / 86400000);
+    const situacao = l.status === 0 ? 'BLOQUEADO' : days < 0 ? 'VENCIDO' : 'ativo';
+    const prazo = days < 0 ? `venceu em ${fmt(l.expDate)} (há ${-days} dia(s))` : `vence em ${fmt(l.expDate)} (faltam ${days} dia(s))`;
+    return `- Usuário: ${l.username} | Plano: ${l.plan || 'não informado'} | Telas: ${l.maxConnections} | Situação: ${situacao}${l.isTrial ? ' (teste)' : ''} | ${prazo}`;
+  });
+  return `CLIENTE IDENTIFICADO — dados consultados agora no servidor:\n${rows.join('\n')}`;
+}
+
 // Webhook receptor da Evolution API
 app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
   res.status(200).send('OK'); // Responde imediatamente
@@ -585,10 +715,13 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
         const { isReceipt, details } = await checkReceiptWithAI(base64, mime);
 
         if (isReceipt) {
+          const session = getWaSession(phone);
+          await resolveWaLines(session, phone, '');
+          const users = session.lines.map((l) => l.username).join(', ');
           const alert: WaReceiptAlert = {
             id: `wa-${Date.now()}`,
             clientPhone: phone,
-            clientName: name,
+            clientName: users ? `${name} (usuário: ${users})` : name,
             imageBase64: base64 || undefined,
             aiAnalysis: details,
             createdAt: new Date().toISOString(),
@@ -607,6 +740,9 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
           continue;
         }
 
+        const session = getWaSession(phone);
+        await resolveWaLines(session, phone, textContent);
+
         const reply = await deepseekChat([
           {
             role: 'system',
@@ -617,13 +753,27 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
               'instalação e configuração dos apps compatíveis (ZUXO Player, Quick Player, Quick Player PRO, QPlay, Big Player, GTV Player, Quick Plus+, RX Purple, CORTEX Player, UTM Play), ' +
               'acesso via Xtream Codes (provedor + usuário + senha fornecidos pelo admin), ' +
               'problemas de acesso, informações sobre pagamento via PIX. ' +
-              'Se não souber algo específico sobre a conta do cliente, diga que vai encaminhar para um atendente humano. ' +
-              'Seja conciso — máximo 3 parágrafos curtos.',
+              'Seja conciso — máximo 3 parágrafos curtos.\n\n' +
+              `Nome do contato no WhatsApp: ${name}\n` +
+              describeWaLines(session.lines) + '\n\n' +
+              'Regras sobre a conta do cliente:\n' +
+              '- Use somente os dados acima; nunca invente vencimento, plano ou situação.\n' +
+              '- Quando o cliente estiver identificado, trate-o pelo usuário e responda direto sobre vencimento, plano e telas.\n' +
+              '- Se tiver mais de um usuário, cite todos ou pergunte de qual ele está falando.\n' +
+              '- Conta VENCIDA ou perto de vencer: explique que a renovação é por PIX e que ele pode enviar o comprovante aqui mesmo.\n' +
+              '- Conta BLOQUEADA: diga que um atendente humano vai verificar.\n' +
+              '- Nunca envie nem confirme senhas. Se pedirem a senha, diga que por segurança um atendente humano vai ajudar.\n' +
+              '- Você não renova, não desbloqueia e não altera contas; para isso, encaminhe para um atendente humano.',
           },
-          { role: 'user', content: `${name}: ${textContent}` },
+          ...session.history,
+          { role: 'user', content: textContent },
         ]);
 
-        if (reply) await sendWaText(phone, reply);
+        if (reply) {
+          session.history.push({ role: 'user', content: textContent }, { role: 'assistant', content: reply });
+          session.history.splice(0, Math.max(0, session.history.length - WA_HISTORY_MAX));
+          await sendWaText(phone, reply);
+        }
       }
     } catch (err) {
       console.error(`[WA Bot] Erro ao processar mensagem de ${phone}:`, err);
