@@ -40,6 +40,7 @@ export interface PixChargeRecord {
   paidAt?: string;
   paymentMethod?: string;
   endToEndId?: string;
+  planId?: string;
 }
 
 const activeCharges = new Map<string, PixChargeRecord>();
@@ -147,11 +148,175 @@ app.get('/api/pix/config', (req: Request, res: Response) => {
   });
 });
 
+// --- PLANOS DE ASSINATURA (gerenciados pelo admin, salvos em data/payment_plans.json) ---
+interface PaymentPlanRecord {
+  id: string;
+  name: string;
+  screens: number;
+  months: number;
+  price: number;
+  active: boolean;
+  recommended: boolean;
+  features: string[];
+  updatedAt: string;
+}
+
+const PLANS_FILE = path.resolve(DATA_DIR, 'payment_plans.json');
+
+const DEFAULT_PLAN_PRICES: Record<number, Record<number, number>> = {
+  1: { 1: 35, 3: 95, 6: 180, 12: 330 },
+  2: { 1: 50, 3: 135, 6: 260, 12: 480 },
+  3: { 1: 65, 3: 175, 6: 330, 12: 620 },
+};
+
+function periodLabel(months: number) {
+  return months === 1 ? '1 mês' : `${months} meses`;
+}
+
+function defaultPlanName(screens: number, months: number) {
+  return `${screens} ${screens === 1 ? 'Tela' : 'Telas'} • ${periodLabel(months)}`;
+}
+
+function defaultPlanFeatures(screens: number) {
+  return [
+    'Canais ao vivo, filmes e séries',
+    `${screens} ${screens === 1 ? 'tela liberada' : 'telas liberadas ao mesmo tempo'}`,
+    'Funciona no MaxPlayer e nos apps compatíveis',
+    'Suporte pelo WhatsApp',
+  ];
+}
+
+function buildDefaultPlans(): PaymentPlanRecord[] {
+  const now = new Date().toISOString();
+  const list: PaymentPlanRecord[] = [];
+  for (const screens of [1, 2, 3]) {
+    for (const months of [1, 3, 6, 12]) {
+      list.push({
+        id: `plan-${screens}t-${months}m`,
+        name: defaultPlanName(screens, months),
+        screens,
+        months,
+        price: DEFAULT_PLAN_PRICES[screens][months],
+        active: true,
+        recommended: screens === 2 && months === 3,
+        features: defaultPlanFeatures(screens),
+        updatedAt: now,
+      });
+    }
+  }
+  return list;
+}
+
+let paymentPlans: PaymentPlanRecord[] = [];
+
+function savePlans() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(PLANS_FILE, JSON.stringify(paymentPlans, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[Planos] Falha ao salvar planos:', err);
+  }
+}
+
+try {
+  if (fs.existsSync(PLANS_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(PLANS_FILE, 'utf-8'));
+    if (Array.isArray(saved)) paymentPlans = saved;
+  }
+} catch { /* arquivo corrompido: usa o padrão */ }
+if (paymentPlans.length === 0) {
+  paymentPlans = buildDefaultPlans();
+  savePlans();
+}
+
+function sortPlans(list: PaymentPlanRecord[]) {
+  return [...list].sort((a, b) => a.screens - b.screens || a.months - b.months || a.price - b.price);
+}
+
+// Valida e normaliza os campos enviados pelo painel. Retorna erro em texto ou os campos limpos.
+function parsePlanInput(body: any, base?: PaymentPlanRecord): { error: string } | { plan: Omit<PaymentPlanRecord, 'id' | 'updatedAt'> } {
+  const screens = body?.screens !== undefined ? Number(body.screens) : base?.screens;
+  const months = body?.months !== undefined ? Number(body.months) : base?.months;
+  const price = body?.price !== undefined ? Math.round(Number(body.price) * 100) / 100 : base?.price;
+
+  if (!Number.isInteger(screens) || screens! < 1 || screens! > 10) return { error: 'Telas deve ser um número inteiro de 1 a 10.' };
+  if (!Number.isInteger(months) || months! < 1 || months! > 36) return { error: 'Meses deve ser um número inteiro de 1 a 36.' };
+  if (!Number.isFinite(price) || price! <= 0 || price! > 100000) return { error: 'Informe um preço válido maior que zero.' };
+
+  const rawName = body?.name !== undefined ? String(body.name).trim() : base?.name || '';
+  const name = (rawName || defaultPlanName(screens!, months!)).slice(0, 80);
+
+  let features = base?.features || defaultPlanFeatures(screens!);
+  if (body?.features !== undefined) {
+    if (!Array.isArray(body.features)) return { error: 'Benefícios devem ser uma lista.' };
+    features = body.features.map((f: unknown) => String(f).trim().slice(0, 120)).filter(Boolean).slice(0, 10);
+    if (features.length === 0) features = defaultPlanFeatures(screens!);
+  }
+
+  return {
+    plan: {
+      name,
+      screens: screens!,
+      months: months!,
+      price: price!,
+      active: body?.active !== undefined ? Boolean(body.active) : base?.active ?? true,
+      recommended: body?.recommended !== undefined ? Boolean(body.recommended) : base?.recommended ?? false,
+      features,
+    },
+  };
+}
+
+// Público: planos ativos para a área do cliente
+app.get('/api/plans', (_req: Request, res: Response) => {
+  res.json({ plans: sortPlans(paymentPlans.filter((p) => p.active)) });
+});
+
+// Admin: todos os planos, inclusive os desativados
+app.get('/api/admin/plans', (_req: Request, res: Response) => {
+  res.json({ plans: sortPlans(paymentPlans) });
+});
+
+app.post('/api/admin/plans', (req: Request, res: Response) => {
+  const parsed = parsePlanInput(req.body);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  const plan: PaymentPlanRecord = {
+    id: `plan-${Date.now()}`,
+    ...parsed.plan,
+    updatedAt: new Date().toISOString(),
+  };
+  paymentPlans.push(plan);
+  savePlans();
+  res.status(201).json({ plan });
+});
+
+app.put('/api/admin/plans/:id', (req: Request, res: Response) => {
+  const idx = paymentPlans.findIndex((p) => p.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'Plano não encontrado.' });
+  const parsed = parsePlanInput(req.body, paymentPlans[idx]);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
+  paymentPlans[idx] = { ...paymentPlans[idx], ...parsed.plan, updatedAt: new Date().toISOString() };
+  savePlans();
+  res.json({ plan: paymentPlans[idx] });
+});
+
+app.delete('/api/admin/plans/:id', (req: Request, res: Response) => {
+  const before = paymentPlans.length;
+  paymentPlans = paymentPlans.filter((p) => p.id !== req.params.id);
+  if (paymentPlans.length === before) return res.status(404).json({ error: 'Plano não encontrado.' });
+  savePlans();
+  res.json({ success: true });
+});
+
 // 2. Create immediate PIX charge
 app.post('/api/pix/create-charge', async (req: Request, res: Response) => {
   try {
-    const { amount, invoiceId, clientId, clientName, description } = req.body;
-    const finalAmount = parseFloat(amount) || 35.00;
+    const { amount, invoiceId, clientId, clientName, description, planId } = req.body;
+    // Compra de plano: o preço vem do cadastro de planos, não do navegador
+    const plan = !invoiceId && planId ? paymentPlans.find((p) => p.id === planId && p.active) : undefined;
+    if (!invoiceId && planId && !plan) {
+      return res.status(400).json({ success: false, error: 'Este plano não está mais disponível. Atualize a página e escolha outro.' });
+    }
+    const finalAmount = plan ? plan.price : parseFloat(amount) || 35.00;
     const txid = `ZX${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
 
     const pixCopiaECola = buildPixPayload(
@@ -175,6 +340,7 @@ app.post('/api/pix/create-charge', async (req: Request, res: Response) => {
       txid,
       invoiceId,
       clientId,
+      planId: plan?.id,
       amount: finalAmount,
       description: description || `Assinatura Zuxo Player VIP`,
       pixCopiaECola,

@@ -53,6 +53,7 @@ import { TrailerItem, ClientApp, ProgramItem, UserProfile, PushNotification, Not
 import { soundEffects } from '../utils/audio';
 import { RevenueBarChart } from './RevenueBarChart';
 import { SystemLogsTab } from './SystemLogsTab';
+import { PlansManager } from './PlansManager';
 import { 
   checkAndSendAutomatedAlerts, 
   sendPushNotification, 
@@ -121,7 +122,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onAddSystemLog,
   onDeleteSystemLog,
 }) => {
-  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'revenue' | 'notifications' | 'logs' | 'apps' | 'trailers' | 'guide' | 'gateway' | 'whatsapp' | 'wmanage'>('clients');
+  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'revenue' | 'notifications' | 'logs' | 'apps' | 'trailers' | 'guide' | 'gateway' | 'whatsapp' | 'wmanage' | 'plans'>('clients');
   const [showChartInClientsTab, setShowChartInClientsTab] = useState<boolean>(true);
 
   // EFÍ BANK GATEWAY CONFIG & TESTING STATE
@@ -1103,6 +1104,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           >
             <Zap className="w-4 h-4 text-amber-400" />
             Gateway Efí Bank PIX
+          </button>
+
+          <button
+            onClick={() => { soundEffects.playClick(); setActiveAdminTab('plans'); }}
+            className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
+              activeAdminTab === 'plans'
+                ? 'bg-[#00F59B] text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-white bg-[#0a1e16]'
+            }`}
+          >
+            <Layers className="w-4 h-4 text-[#00F59B]" />
+            Planos
           </button>
 
           <button
@@ -3378,6 +3391,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           </div>
         )}
+
+        {/* GESTÃO DE PLANOS DE ASSINATURA */}
+        {activeAdminTab === 'plans' && <PlansManager />}
 
         {/* TAB 9: WHATSAPP BOT — ALERTAS DE COMPROVANTE */}
         {activeAdminTab === 'whatsapp' && (

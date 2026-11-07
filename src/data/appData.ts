@@ -475,51 +475,31 @@ export const INITIAL_PROGRAM_GUIDE: ProgramItem[] = [
   }
 ];
 
-export const INITIAL_PAYMENT_PLANS: PaymentPlan[] = [
-  {
-    id: 'plan-monthly',
-    name: 'Plano Mensal Zuxo',
-    period: 'Mês',
-    price: 35.00,
-    screens: 1,
+// Usado só se a API de planos não responder. Os planos reais são gerenciados no Painel Admin
+// e o preço cobrado no PIX sempre vem do servidor (server.ts, DEFAULT_PLAN_PRICES).
+const FALLBACK_PLAN_PRICES: Record<number, Record<number, number>> = {
+  1: { 1: 35, 3: 95, 6: 180, 12: 330 },
+  2: { 1: 50, 3: 135, 6: 260, 12: 480 },
+  3: { 1: 65, 3: 175, 6: 330, 12: 620 },
+};
+
+export const INITIAL_PAYMENT_PLANS: PaymentPlan[] = [1, 2, 3].flatMap((screens) =>
+  [1, 3, 6, 12].map((months) => ({
+    id: `plan-${screens}t-${months}m`,
+    name: `${screens} ${screens === 1 ? 'Tela' : 'Telas'} • ${months === 1 ? '1 mês' : `${months} meses`}`,
+    screens,
+    months,
+    price: FALLBACK_PLAN_PRICES[screens][months],
+    active: true,
+    recommended: screens === 2 && months === 3,
     features: [
-      '2.448 Canais Ao Vivo (FHD/4K)',
-      '42.000+ Filmes e Séries atualizados',
-      'Grade de Programação EPG em tempo real',
-      '1 Tela Simultânea',
-      'Suporte via WhatsApp 7 dias por semana'
-    ]
-  },
-  {
-    id: 'plan-quarterly',
-    name: 'Plano Trimestral (Mais Popular)',
-    period: '3 Meses',
-    price: 89.90,
-    screens: 2,
-    recommended: true,
-    features: [
-      'Tudo do Plano Mensal',
-      '2 Telas Simultâneas liberadas',
-      'Qualidade 4K HDR e 60fps nos Esportes',
-      'Economia de R$ 15,10 no trimestre',
-      'Acesso prioritário aos servidores CDN VIP'
-    ]
-  },
-  {
-    id: 'plan-annual',
-    name: 'Plano Anual VIP Premium',
-    period: 'Ano',
-    price: 249.90,
-    screens: 3,
-    features: [
-      'Tudo do Plano Trimestral',
-      '3 Telas Simultâneas para toda a família',
-      'Apenas R$ 20,82 por mês',
-      'Servidor VIP com buffer zero',
-      'Suporte VIP prioritário no WhatsApp'
-    ]
-  }
-];
+      'Canais ao vivo, filmes e séries',
+      `${screens} ${screens === 1 ? 'tela liberada' : 'telas liberadas ao mesmo tempo'}`,
+      'Funciona no MaxPlayer e nos apps compatíveis',
+      'Suporte pelo WhatsApp',
+    ],
+  }))
+);
 
 export const INITIAL_INVOICES: Invoice[] = [
   {

@@ -21,8 +21,7 @@ import { AdminAuthModal } from './components/AdminAuthModal';
 import { 
   INITIAL_TRAILERS, 
   INITIAL_APPS, 
-  INITIAL_PROGRAM_GUIDE, 
-  INITIAL_PAYMENT_PLANS, 
+  INITIAL_PROGRAM_GUIDE,
   INITIAL_INVOICES,
   INITIAL_CLIENTS
 } from './data/appData';
@@ -706,7 +705,6 @@ export default function App() {
             <CustomerPortal
               currentUser={currentUser}
               apps={apps}
-              paymentPlans={INITIAL_PAYMENT_PLANS}
               invoices={invoices}
               programs={programs}
               notifications={notifications}

@@ -52,11 +52,11 @@ import {
   simulateEfiPayment, 
   EFIBANK_OFFICIAL_PIX_KEY 
 } from '../services/efiBankService';
+import { useActivePlans, formatBRL, planPeriodLabel, screensLabel } from '../services/planService';
 
 interface CustomerPortalProps {
   currentUser: UserProfile;
   apps: ClientApp[];
-  paymentPlans: PaymentPlan[];
   invoices: Invoice[];
   programs: ProgramItem[];
   notifications?: PushNotification[];
@@ -73,7 +73,6 @@ interface CustomerPortalProps {
 export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   currentUser,
   apps,
-  paymentPlans,
   invoices: initialInvoices,
   programs,
   notifications = [],
@@ -86,7 +85,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   onMarkNotificationAsRead = () => {},
   onDeleteNotification = () => {},
 }) => {
-  const [activeTab, setActiveTab] = useState<'apps' | 'payments' | 'cycle' | 'schedule' | 'credentials' | 'notifications'>('apps');
+  const [activeTab, setActiveTab] = useState<'apps' | 'plans' | 'payments' | 'cycle' | 'schedule' | 'credentials' | 'notifications'>('apps');
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
   const [pushPermissionStatus, setPushPermissionStatus] = useState<string>(() => getNotificationPermissionStatus());
   const [isRequestingPush, setIsRequestingPush] = useState<boolean>(false);
@@ -97,7 +96,29 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   const [selectedInvoiceToPay, setSelectedInvoiceToPay] = useState<Invoice | null>(() => pendingInvoices[0] || null);
   const clientDaysLeft = calculateDaysRemaining(currentUser.expirationDate);
 
-  const [selectedPlan, setSelectedPlan] = useState<PaymentPlan>(paymentPlans[1] || paymentPlans[0]);
+  // PLANOS (gerenciados pelo admin). Sem escolha explícita, a renovação usa o plano mensal das telas do cliente.
+  const { plans: paymentPlans, loading: plansLoading } = useActivePlans();
+  const [chosenPlanId, setChosenPlanId] = useState<string | null>(null);
+  const [plansScreenFilter, setPlansScreenFilter] = useState<number>(() => currentUser.screens || 1);
+  const defaultPlan: PaymentPlan | undefined =
+    paymentPlans.find((p) => p.screens === currentUser.screens && p.months === 1) ||
+    paymentPlans.find((p) => p.months === 1) ||
+    paymentPlans[0];
+  const chosenPlan = chosenPlanId ? paymentPlans.find((p) => p.id === chosenPlanId) : undefined;
+  const selectedPlan = chosenPlan || defaultPlan;
+  const planScreenOptions = [...new Set(paymentPlans.map((p) => p.screens))].sort((a, b) => a - b);
+  const plansForScreen = paymentPlans
+    .filter((p) => p.screens === (planScreenOptions.includes(plansScreenFilter) ? plansScreenFilter : planScreenOptions[0]))
+    .sort((a, b) => a.months - b.months || a.price - b.price);
+  const monthlyPriceFor = (screens: number) => paymentPlans.find((p) => p.screens === screens && p.months === 1)?.price;
+
+  const handleChoosePlan = (plan: PaymentPlan) => {
+    soundEffects.playSelect();
+    setChosenPlanId(plan.id);
+    setSelectedInvoiceToPay(null);
+    setActiveTab('payments');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const [paymentMethod, setPaymentMethod] = useState<'pix' | 'credit_card' | 'boleto'>('pix');
   const [selectedPixKey, setSelectedPixKey] = useState<PixKeyOption>(DEFAULT_PIX_KEYS[0]);
   
@@ -139,13 +160,18 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   
   // Determine current payment amount:
   // 1. If paying a specific pending invoice -> that invoice's amount
-  // 2. If client has an individual custom price set by admin -> customPrice
-  // 3. Otherwise -> selected plan price
-  const activePaymentAmount = selectedInvoiceToPay 
-    ? selectedInvoiceToPay.amount 
-    : (currentUser.customPrice && currentUser.customPrice > 0) 
-      ? currentUser.customPrice 
-      : selectedPlan.price;
+  // 2. If the client chose a plan in the Planos tab -> that plan's price
+  // 3. If client has an individual custom price set by admin -> customPrice
+  // 4. Otherwise -> default monthly plan price
+  const activePaymentAmount = selectedInvoiceToPay
+    ? selectedInvoiceToPay.amount
+    : chosenPlan
+      ? chosenPlan.price
+      : (currentUser.customPrice && currentUser.customPrice > 0)
+        ? currentUser.customPrice
+        : selectedPlan?.price ?? 35;
+  // Plano que está sendo pago agora (nenhum quando é fatura pendente)
+  const planBeingPaid = !selectedInvoiceToPay ? chosenPlan : undefined;
 
   // Generate dynamic PIX BR Code payload and Dynamic QR Code via Efí Bank whenever amount, key, or invoice changes
   useEffect(() => {
@@ -158,7 +184,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
           invoiceId: selectedInvoiceToPay?.id,
           clientId: currentUser.id,
           clientName: currentUser.name,
-          description: `Zuxo Player VIP - ${currentUser.name}`
+          planId: planBeingPaid?.id,
+          description: planBeingPaid
+            ? `Zuxo Player ${planBeingPaid.name} - ${currentUser.name}`
+            : `Zuxo Player VIP - ${currentUser.name}`
         });
 
         if (!isMounted) return;
@@ -177,7 +206,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [activePaymentAmount, selectedPixKey, selectedInvoiceToPay, currentUser.id, currentUser.name]);
+  }, [activePaymentAmount, selectedPixKey, selectedInvoiceToPay, planBeingPaid?.id, currentUser.id, currentUser.name]);
 
   // AUTO-POLL EFI BANK STATUS WHILE ON PAYMENTS TAB
   useEffect(() => {
@@ -254,19 +283,25 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   const completePaymentSuccess = (providerLabel = 'PIX Efí Bank') => {
     setPaymentSuccess(true);
     
-    // Calculate new expiration date (+30 days or next month)
-    const now = new Date();
-    now.setDate(now.getDate() + 30);
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const year = now.getFullYear();
+    // Nova data de vencimento: plano escolhido soma os meses dele; renovação/fatura soma 30 dias.
+    // Conta a partir do vencimento atual se ainda não venceu, para o cliente não perder dias.
+    const [curD, curM, curY] = (currentUser.expirationDate || '').split('/').map(Number);
+    const currentExp = curD && curM && curY ? new Date(curY, curM - 1, curD) : null;
+    const start = currentExp && currentExp.getTime() > Date.now() ? currentExp : new Date();
+    const next = new Date(start);
+    if (planBeingPaid) next.setMonth(next.getMonth() + planBeingPaid.months);
+    else next.setDate(next.getDate() + 30);
+    const day = String(next.getDate()).padStart(2, '0');
+    const month = String(next.getMonth() + 1).padStart(2, '0');
+    const year = next.getFullYear();
     const newExpDate = `${day}/${month}/${year}`;
 
-    // Update User profile
+    // Update User profile (plano comprado também define as telas liberadas)
     onUpdateUser({
       ...currentUser,
       expirationDate: newExpDate,
       status: 'ativo',
+      ...(planBeingPaid ? { screens: planBeingPaid.screens, plan: planBeingPaid.name } : {}),
     });
 
     let updatedList: Invoice[] = [];
@@ -287,7 +322,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
       // Nova fatura gerada e paga
       const newInvoice: Invoice = {
         id: `inv-${Date.now()}`,
-        description: `Renovação de Assinatura (${currentUser.screens} ${currentUser.screens === 1 ? 'Tela' : 'Telas'})`,
+        description: planBeingPaid
+          ? `Plano ${planBeingPaid.name}`
+          : `Renovação de Assinatura (${currentUser.screens} ${currentUser.screens === 1 ? 'Tela' : 'Telas'})`,
         date: new Date().toLocaleDateString('pt-BR'),
         dueDate: newExpDate,
         amount: activePaymentAmount,
@@ -657,6 +694,21 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
           <button
             onClick={() => {
               soundEffects.playClick();
+              setActiveTab('plans');
+            }}
+            className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
+              activeTab === 'plans'
+                ? 'bg-[#00F59B] text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-white bg-[#0a1e16]'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            Planos
+          </button>
+
+          <button
+            onClick={() => {
+              soundEffects.playClick();
               setActiveTab('payments');
             }}
             className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap relative ${
@@ -741,6 +793,124 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             Minhas Credenciais
           </button>
         </div>
+
+        {/* TAB: PLANOS — o cliente escolhe telas e duração */}
+        {activeTab === 'plans' && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+              <div>
+                <h3 className="text-xl sm:text-2xl font-black text-white font-display">Escolha o melhor plano para você</h3>
+                <p className="text-sm text-slate-400 mt-1">
+                  Quanto mais meses, menor o valor por mês. Seu plano atual:{' '}
+                  <strong className="text-white">{screensLabel(currentUser.screens || 1)}</strong>.
+                </p>
+              </div>
+
+              {/* Seletor de telas */}
+              {planScreenOptions.length > 1 && (
+                <div className="flex p-1 rounded-2xl bg-[#05130d] border border-emerald-950 self-start md:self-auto">
+                  {planScreenOptions.map((screens) => {
+                    const active = (planScreenOptions.includes(plansScreenFilter) ? plansScreenFilter : planScreenOptions[0]) === screens;
+                    return (
+                      <button
+                        key={screens}
+                        onClick={() => { soundEffects.playClick(); setPlansScreenFilter(screens); }}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+                          active ? 'bg-[#00F59B] text-slate-950 shadow-md' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Tv className="w-4 h-4" />
+                        {screensLabel(screens)}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {paymentPlans.length === 0 ? (
+              <div className="py-16 text-center text-slate-500 text-sm">
+                {plansLoading ? 'Carregando planos…' : 'Nenhum plano disponível no momento. Fale com o suporte pelo WhatsApp.'}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+                {plansForScreen.map((plan) => {
+                  const perMonth = plan.price / plan.months;
+                  const base = monthlyPriceFor(plan.screens);
+                  const saving = plan.months > 1 && base ? base * plan.months - plan.price : 0;
+                  const savingPct = saving > 0 && base ? Math.round((saving / (base * plan.months)) * 100) : 0;
+                  const isChosen = chosenPlanId === plan.id;
+                  const isCurrentScreens = plan.screens === currentUser.screens;
+
+                  return (
+                    <div
+                      key={plan.id}
+                      className={`relative rounded-3xl p-5 flex flex-col justify-between border transition-all ${
+                        plan.recommended
+                          ? 'bg-gradient-to-b from-[#0c2f22] to-[#071c14] border-2 border-[#00F59B] shadow-[0_0_25px_rgba(0,245,155,0.25)]'
+                          : 'bg-[#0a1e16] border-emerald-950 hover:border-emerald-700/60'
+                      }`}
+                    >
+                      {plan.recommended && (
+                        <span className="absolute -top-3 right-4 px-3 py-0.5 bg-gradient-to-r from-emerald-500 to-[#00F59B] text-slate-950 text-[10px] font-black uppercase tracking-wider rounded-full shadow-md">
+                          Mais escolhido
+                        </span>
+                      )}
+
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wider text-[#00F59B]">{planPeriodLabel(plan.months)}</p>
+                        <h4 className="text-base font-bold text-white font-display mt-1">{plan.name}</h4>
+
+                        <div className="mt-4">
+                          <span className="text-3xl font-black text-white font-mono">{formatBRL(plan.price)}</span>
+                          {plan.months > 1 && (
+                            <p className="text-xs text-slate-400 mt-1">equivale a {formatBRL(perMonth)}/mês</p>
+                          )}
+                          {savingPct > 0 && (
+                            <span className="inline-block mt-2 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-[#00F59B]/15 text-[#00F59B] border border-[#00F59B]/30">
+                              Economize {formatBRL(saving)} ({savingPct}%)
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5 text-xs text-slate-300 border-t border-emerald-950 pt-3 mt-4 mb-4">
+                          {plan.features.map((feat, i) => (
+                            <div key={i} className="flex items-start gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-[#00F59B] flex-shrink-0 mt-0.5" />
+                              <span>{feat}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        {!isCurrentScreens && (
+                          <p className="text-[11px] text-amber-300 mb-2">
+                            Muda seu acesso de {screensLabel(currentUser.screens || 1)} para {screensLabel(plan.screens)}.
+                          </p>
+                        )}
+                        <button
+                          onClick={() => handleChoosePlan(plan)}
+                          className={`w-full py-2.5 rounded-xl text-sm font-black transition-all ${
+                            isChosen || plan.recommended
+                              ? 'bg-[#00F59B] text-slate-950 hover:bg-[#00d987]'
+                              : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/40 hover:text-white'
+                          }`}
+                        >
+                          {isChosen ? 'Plano escolhido ✓ Pagar' : 'Escolher e pagar via PIX'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <p className="text-xs text-slate-500">
+              Após o pagamento, o prazo do plano é somado ao seu vencimento atual. Dúvidas? Fale com a gente pelo WhatsApp.
+            </p>
+          </div>
+        )}
 
         {/* TAB 1: MEUS APLICATIVOS DISPONÍVEIS */}
         {activeTab === 'apps' && (
@@ -1088,9 +1258,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                     </h3>
                   </div>
                   <p className="text-xs text-slate-300 mt-1">
-                    {selectedInvoiceToPay 
-                      ? `Quitando: ${selectedInvoiceToPay.description}` 
-                      : `Plano Selecionado: ${selectedPlan.name} (${currentUser.screens} Telas)`}
+                    {selectedInvoiceToPay
+                      ? `Quitando: ${selectedInvoiceToPay.description}`
+                      : planBeingPaid
+                        ? `Plano escolhido: ${planBeingPaid.name} (${screensLabel(planBeingPaid.screens)}, ${planPeriodLabel(planBeingPaid.months)})`
+                        : `Renovação mensal (${screensLabel(currentUser.screens || 1)})`}
                   </p>
                 </div>
 
@@ -1461,72 +1633,34 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               )}
             </div>
 
-            {/* SEÇÃO 3: PLANOS DE RENOVAÇÃO & UPGRADES DISPONÍVEIS */}
-            <div>
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
-                <div>
-                  <h3 className="text-lg font-bold text-white font-display">
-                    Planos de Assinatura & Upgrades Zuxo
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Deseja antecipar períodos mais longos ou liberar mais telas simultâneas?
-                  </p>
-                </div>
+            {/* SEÇÃO 3: PLANO DA COBRANÇA + ATALHO PARA A ABA PLANOS */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-[#0a1e16] border border-emerald-950">
+              <div>
+                <h3 className="text-base font-bold text-white font-display">
+                  {planBeingPaid ? `Plano escolhido: ${planBeingPaid.name}` : 'Quer mais telas ou um período maior?'}
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  {planBeingPaid
+                    ? `${screensLabel(planBeingPaid.screens)} por ${planPeriodLabel(planBeingPaid.months)} — ${formatBRL(planBeingPaid.price)}. Você pode trocar antes de pagar.`
+                    : 'Veja os planos de 1, 3, 6 e 12 meses: quanto mais meses, menor o valor por mês.'}
+                </p>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {paymentPlans.map((plan) => (
-                  <div
-                    key={plan.id}
-                    onClick={() => {
-                      soundEffects.playClick();
-                      setSelectedPlan(plan);
-                      setSelectedInvoiceToPay(null);
-                    }}
-                    className={`cursor-pointer rounded-3xl p-5 border transition-all relative flex flex-col justify-between ${
-                      (!selectedInvoiceToPay && selectedPlan.id === plan.id)
-                        ? 'bg-gradient-to-b from-[#0c2f22] to-[#071c14] border-2 border-[#00F59B] shadow-[0_0_25px_rgba(0,245,155,0.3)] scale-[1.02]'
-                        : 'bg-[#0a1e16] border-emerald-950 hover:border-emerald-700/60'
-                    }`}
+              <div className="flex gap-2">
+                {planBeingPaid && (
+                  <button
+                    onClick={() => { soundEffects.playClick(); setChosenPlanId(null); }}
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-300 hover:text-white bg-[#05130d] border border-emerald-900/60 whitespace-nowrap"
                   >
-                    {plan.recommended && (
-                      <span className="absolute -top-3 right-4 px-3 py-0.5 bg-gradient-to-r from-emerald-500 to-[#00F59B] text-slate-950 text-[10px] font-black uppercase tracking-wider rounded-full shadow-md">
-                        Mais Escolhido
-                      </span>
-                    )}
-
-                    <div>
-                      <h4 className="text-base font-bold text-white font-display mb-1">
-                        {plan.name}
-                      </h4>
-                      <div className="flex items-baseline gap-1 my-3">
-                        <span className="text-2xl sm:text-3xl font-black text-white font-mono">
-                          R$ {plan.price.toFixed(2).replace('.', ',')}
-                        </span>
-                        <span className="text-xs text-slate-400">/{plan.period}</span>
-                      </div>
-
-                      <div className="space-y-1.5 text-xs text-slate-300 border-t border-emerald-950 pt-3 mb-4">
-                        {plan.features.map((feat, i) => (
-                          <div key={i} className="flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-[#00F59B] flex-shrink-0" />
-                            <span>{feat}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="pt-2">
-                      <div className={`w-full py-2 rounded-xl text-xs font-bold text-center transition-all ${
-                        (!selectedInvoiceToPay && selectedPlan.id === plan.id)
-                          ? 'bg-[#00F59B] text-slate-950'
-                          : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/40'
-                      }`}>
-                        {(!selectedInvoiceToPay && selectedPlan.id === plan.id) ? 'Plano Selecionado ✓' : 'Selecionar Plano'}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                    Voltar à renovação mensal
+                  </button>
+                )}
+                <button
+                  onClick={() => { soundEffects.playClick(); setActiveTab('plans'); }}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-black bg-[#00F59B] text-slate-950 hover:bg-[#00d987] whitespace-nowrap"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  {planBeingPaid ? 'Trocar plano' : 'Ver planos'}
+                </button>
               </div>
             </div>
 

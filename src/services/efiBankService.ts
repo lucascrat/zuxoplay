@@ -70,6 +70,7 @@ export async function createEfiPixCharge(params: {
   clientId?: string;
   clientName?: string;
   description?: string;
+  planId?: string; // compra de plano: o servidor cobra o preço cadastrado do plano
 }): Promise<EfiPixChargeResponse> {
   // 1. Try server endpoint first
   try {

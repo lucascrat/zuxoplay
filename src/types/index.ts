@@ -88,14 +88,17 @@ export interface ProgramItem {
   dayOfWeek?: string;
 }
 
+// Plano de assinatura gerenciado pelo admin (servidor: /api/admin/plans)
 export interface PaymentPlan {
   id: string;
   name: string;
-  period: string;
-  price: number;
-  screens: number;
-  features: string[];
+  screens: number; // telas liberadas ao mesmo tempo
+  months: number; // duração do plano
+  price: number; // valor total do período
+  active: boolean;
   recommended?: boolean;
+  features: string[];
+  updatedAt?: string;
 }
 
 export interface Invoice {
