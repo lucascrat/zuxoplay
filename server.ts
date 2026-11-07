@@ -19,7 +19,7 @@ const portIndex = args.indexOf('--port');
 const portArg = portIndex !== -1 && args[portIndex + 1] ? parseInt(args[portIndex + 1], 10) : undefined;
 const PORT = portArg || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Efí Bank Environment Configuration
 const EFIBANK_CLIENT_ID = process.env.EFIBANK_CLIENT_ID || 'Client_Id_62a2fe6ca801b2a8c7c688c6d1cc425aca747df4';
@@ -536,7 +536,9 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
   res.status(200).send('OK'); // Responde imediatamente
 
   const payload = req.body;
-  if (!payload?.event || payload.event !== 'MESSAGES_UPSERT') return;
+  // Evolution v2 envia "messages.upsert"; v1 enviava "MESSAGES_UPSERT"
+  const event = String(payload?.event || '').toLowerCase().replace('_', '.');
+  if (event !== 'messages.upsert') return;
 
   // Suporta formato v1 (data.messages[]) e v2 (data é a mensagem)
   const messages: any[] = Array.isArray(payload.data?.messages)
@@ -622,27 +624,6 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
       console.error(`[WA Bot] Erro ao processar mensagem de ${phone}:`, err);
     }
   }
-});
-
-// Debug: testa conectividade com Evolution API e DeepSeek (remover após diagnóstico)
-app.get('/api/whatsapp/debug', async (_req: Request, res: Response) => {
-  const result: Record<string, unknown> = {
-    EVO_API_URL_set: !!EVO_API_URL,
-    EVO_API_KEY_set: !!EVO_API_KEY,
-    EVO_INSTANCE: EVO_INSTANCE,
-    DEEPSEEK_API_KEY_set: !!DEEPSEEK_API_KEY,
-  };
-  try {
-    const r = await fetch(`${EVO_API_URL}/instance/fetchInstances`, {
-      headers: { apikey: EVO_API_KEY },
-    });
-    result.evo_reach = r.status;
-    result.evo_ok = r.ok;
-  } catch (e: any) {
-    result.evo_reach = 'ERRO';
-    result.evo_error = e?.message;
-  }
-  res.json(result);
 });
 
 // Admin: listar alertas de comprovantes não lidos
