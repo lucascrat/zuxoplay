@@ -491,6 +491,25 @@ function saveWaAlerts() {
 
 loadWaAlerts();
 
+// Liga/pausa o atendente de IA pelo painel (persistido em disco)
+const WA_SETTINGS_FILE = path.resolve(DATA_DIR, 'whatsapp_bot_settings.json');
+const waBotSettings: { enabled: boolean; updatedAt: string | null } = { enabled: true, updatedAt: null };
+
+try {
+  if (fs.existsSync(WA_SETTINGS_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(WA_SETTINGS_FILE, 'utf-8'));
+    if (typeof saved?.enabled === 'boolean') waBotSettings.enabled = saved.enabled;
+    if (typeof saved?.updatedAt === 'string') waBotSettings.updatedAt = saved.updatedAt;
+  }
+} catch { /* ignore */ }
+
+function saveWaBotSettings() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(WA_SETTINGS_FILE, JSON.stringify(waBotSettings, null, 2), 'utf-8');
+  } catch { /* ignore */ }
+}
+
 async function sendWaText(phone: string, text: string) {
   try {
     const r = await fetch(`${EVO_API_URL}/message/sendText/${EVO_INSTANCE}`, {
@@ -731,6 +750,8 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
         } catch { /* download falhou */ }
 
         const { isReceipt, details } = await checkReceiptWithAI(base64, mime);
+        // Pausado: o comprovante ainda vai para o painel, mas o bot não responde nada
+        const botOn = waBotSettings.enabled;
 
         if (isReceipt) {
           const session = getWaSession(phone);
@@ -748,11 +769,13 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
           waAlerts.push(alert);
           saveWaAlerts();
           console.log(`[WA Bot] Comprovante recebido de ${name} (${phone})`);
-          await sendWaText(phone, `✅ Comprovante recebido, ${name}! Obrigado. Vamos verificar e liberar seu acesso em breve. Se tiver dúvidas, é só perguntar!`);
-        } else {
+          if (botOn) await sendWaText(phone, `✅ Comprovante recebido, ${name}! Obrigado. Vamos verificar e liberar seu acesso em breve. Se tiver dúvidas, é só perguntar!`);
+        } else if (botOn) {
           await sendWaText(phone, `Olá, ${name}! Recebi sua imagem. Se for um comprovante de pagamento, pode me enviar novamente em boa resolução. Para dúvidas sobre planos ou instalação dos apps, é só perguntar! 😊`);
         }
       } else if (textContent) {
+        if (!waBotSettings.enabled) continue; // Atendente pausado: um humano responde pelo WhatsApp
+
         if (!DEEPSEEK_API_KEY) {
           await sendWaText(phone, `Olá, ${name}! Recebemos sua mensagem. Um atendente humano vai responder em breve. 🙂`);
           continue;
@@ -805,6 +828,22 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
       console.error(`[WA Bot] Erro ao processar mensagem de ${phone}:`, err);
     }
   }
+});
+
+// Admin: estado do atendente de IA (ativo/pausado)
+app.get('/api/whatsapp/bot-status', (_req: Request, res: Response) => {
+  res.json(waBotSettings);
+});
+
+app.post('/api/whatsapp/bot-status', (req: Request, res: Response) => {
+  if (typeof req.body?.enabled !== 'boolean') {
+    return res.status(400).json({ error: 'Envie { enabled: true | false }' });
+  }
+  waBotSettings.enabled = req.body.enabled;
+  waBotSettings.updatedAt = new Date().toISOString();
+  saveWaBotSettings();
+  console.log(`[WA Bot] Atendente ${waBotSettings.enabled ? 'ATIVADO' : 'PAUSADO'} pelo painel`);
+  res.json(waBotSettings);
 });
 
 // Admin: listar alertas de comprovantes não lidos

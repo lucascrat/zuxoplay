@@ -45,7 +45,9 @@ import {
   Ban,
   CheckCircle,
   PlusCircle,
-  Timer
+  Timer,
+  Pause,
+  Play
 } from 'lucide-react';
 import { TrailerItem, ClientApp, ProgramItem, UserProfile, PushNotification, NotificationType, SystemLog } from '../types';
 import { soundEffects } from '../utils/audio';
@@ -149,6 +151,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const iv = setInterval(fetchWaAlerts, 30000);
     return () => clearInterval(iv);
   }, []);
+
+  // ATENDENTE IA: ativo / pausado (null = ainda carregando)
+  const [waBotEnabled, setWaBotEnabled] = useState<boolean | null>(null);
+  const [waBotSaving, setWaBotSaving] = useState(false);
+  const [waBotError, setWaBotError] = useState('');
+
+  useEffect(() => {
+    fetch('/api/whatsapp/bot-status')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setWaBotEnabled(Boolean(d.enabled)))
+      .catch(() => setWaBotError('Não foi possível ler o estado do atendente.'));
+  }, []);
+
+  const toggleWaBot = async () => {
+    if (waBotEnabled === null) return;
+    soundEffects.playClick();
+    setWaBotSaving(true);
+    setWaBotError('');
+    try {
+      const r = await fetch('/api/whatsapp/bot-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !waBotEnabled }),
+      });
+      if (!r.ok) throw new Error();
+      const d = await r.json();
+      setWaBotEnabled(Boolean(d.enabled));
+    } catch {
+      setWaBotError('Não foi possível alterar o atendente. Tente de novo.');
+    } finally {
+      setWaBotSaving(false);
+    }
+  };
 
   const dismissWaAlert = async (id: string) => {
     setWaDismissing((prev) => new Set(prev).add(id));
@@ -3355,7 +3390,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
                 <div>
                   <h3 className="text-xl font-black text-white font-display">WhatsApp Bot — Atendimento IA</h3>
-                  <p className="text-slate-400 text-sm mt-0.5">Instância <span className="text-[#00F59B] font-bold">zuxo-atendimento</span> • DeepSeek AI ativo</p>
+                  <p className="text-slate-400 text-sm mt-0.5">
+                    Instância <span className="text-[#00F59B] font-bold">zuxo-atendimento</span> • Atendente IA{' '}
+                    {waBotEnabled === null ? '…' : waBotEnabled
+                      ? <span className="text-[#00F59B] font-bold">ativo</span>
+                      : <span className="text-amber-400 font-bold">pausado</span>}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -3373,6 +3413,46 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   Manager
                 </a>
               </div>
+            </div>
+
+            {/* Liga / pausa o atendente IA */}
+            <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl border ${
+              waBotEnabled === false ? 'bg-amber-950/20 border-amber-700/40' : 'bg-[#040f0a] border-emerald-900/40'
+            }`}>
+              <div className="flex items-start gap-3">
+                <span className={`mt-1.5 w-2.5 h-2.5 rounded-full flex-shrink-0 ${
+                  waBotEnabled === null ? 'bg-slate-600' : waBotEnabled ? 'bg-[#00F59B] animate-pulse' : 'bg-amber-400'
+                }`} />
+                <div>
+                  <p className="text-sm font-black text-white">
+                    {waBotEnabled === null ? 'Carregando atendente…' : waBotEnabled ? 'Atendente IA ativo' : 'Atendente IA pausado'}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {waBotEnabled === false
+                      ? 'O bot não responde ninguém. Responda os clientes pelo WhatsApp; comprovantes continuam chegando aqui.'
+                      : 'O bot responde os clientes automaticamente pelo WhatsApp.'}
+                  </p>
+                  {waBotError && <p className="text-xs text-red-400 mt-1">{waBotError}</p>}
+                </div>
+              </div>
+              <button
+                onClick={toggleWaBot}
+                disabled={waBotEnabled === null || waBotSaving}
+                className={`flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                  waBotEnabled === false
+                    ? 'bg-[#00F59B] text-black hover:bg-[#00d987]'
+                    : 'bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-amber-500/25'
+                }`}
+              >
+                {waBotSaving ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : waBotEnabled === false ? (
+                  <Play className="w-4 h-4" />
+                ) : (
+                  <Pause className="w-4 h-4" />
+                )}
+                {waBotEnabled === false ? 'Ativar atendente' : 'Pausar atendente'}
+              </button>
             </div>
 
             {/* Alertas de Comprovante */}
