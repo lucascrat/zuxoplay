@@ -649,6 +649,62 @@ app.get('/api/whatsapp/alerts/:id/image', (req: Request, res: Response) => {
   res.send(buf);
 });
 
+// --- WMANAGE API PROXY ---
+const WZ_BASE = 'https://mcapi.knewcms.com:2087';
+const WZ_KEY = process.env.WZ_API_KEY || '';
+
+function wzHeaders() {
+  return { 'Authorization': `Bearer ${WZ_KEY}`, 'Content-Type': 'application/json' };
+}
+
+async function wzFetch(method: string, path: string, body?: unknown) {
+  const opts: RequestInit = { method, headers: wzHeaders() };
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  const r = await fetch(`${WZ_BASE}${path}`, opts);
+  const json = await r.json().catch(() => ({}));
+  return { status: r.status, json };
+}
+
+// GET /api/wmanage/clients?page=1&quantityPerPage=50&closeToExpire=true&generalSearch=...
+app.get('/api/wmanage/clients', async (req: Request, res: Response) => {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(req.query)) {
+    if (typeof v === 'string') params.set(k, v);
+  }
+  const { status, json } = await wzFetch('GET', `/lines?${params.toString()}`);
+  res.status(status).json(json);
+});
+
+// GET /api/wmanage/clients/:id/activations
+app.get('/api/wmanage/clients/:id/activations', async (req: Request, res: Response) => {
+  const { status, json } = await wzFetch('GET', `/lines/app-activations/${req.params.id}`);
+  res.status(status).json(json);
+});
+
+// POST /api/wmanage/clients/:id/extend   body: {days: number}
+app.post('/api/wmanage/clients/:id/extend', async (req: Request, res: Response) => {
+  const { status, json } = await wzFetch('PATCH', `/lines/v2/extend/${req.params.id}`, req.body);
+  res.status(status).json(json);
+});
+
+// POST /api/wmanage/clients/:id/block
+app.post('/api/wmanage/clients/:id/block', async (req: Request, res: Response) => {
+  const { status, json } = await wzFetch('PATCH', `/lines/${req.params.id}`, { status: 0 });
+  res.status(status).json(json);
+});
+
+// POST /api/wmanage/clients/:id/unblock
+app.post('/api/wmanage/clients/:id/unblock', async (req: Request, res: Response) => {
+  const { status, json } = await wzFetch('PATCH', `/lines/${req.params.id}`, { status: 1 });
+  res.status(status).json(json);
+});
+
+// POST /api/wmanage/clients/:id/add48h
+app.post('/api/wmanage/clients/:id/add48h', async (req: Request, res: Response) => {
+  const { status, json } = await wzFetch('PATCH', `/lines/48-add/${req.params.id}`);
+  res.status(status).json(json);
+});
+
 // --- VITE MIDDLEWARE SETUP ---
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production';

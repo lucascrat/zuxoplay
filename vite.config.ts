@@ -18,6 +18,10 @@ export default defineConfig(() => {
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       // data/ holds runtime PIX records written by server.ts; watching it reloads the page mid-checkout.
       watch: process.env.DISABLE_HMR === 'true' ? null : { ignored: ['**/data/**'] },
+      proxy: {
+        '/api': { target: 'http://localhost:3000', changeOrigin: true },
+        '/webhook': { target: 'http://localhost:3000', changeOrigin: true },
+      },
     },
   };
 });

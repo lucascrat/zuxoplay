@@ -39,7 +39,13 @@ import {
   Key,
   Copy,
   ShieldAlert,
-  MessageSquare
+  MessageSquare,
+  Server,
+  RefreshCcw,
+  Ban,
+  CheckCircle,
+  PlusCircle,
+  Timer
 } from 'lucide-react';
 import { TrailerItem, ClientApp, ProgramItem, UserProfile, PushNotification, NotificationType, SystemLog } from '../types';
 import { soundEffects } from '../utils/audio';
@@ -113,7 +119,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onAddSystemLog,
   onDeleteSystemLog,
 }) => {
-  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'revenue' | 'notifications' | 'logs' | 'apps' | 'trailers' | 'guide' | 'gateway' | 'whatsapp'>('clients');
+  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'revenue' | 'notifications' | 'logs' | 'apps' | 'trailers' | 'guide' | 'gateway' | 'whatsapp' | 'wmanage'>('clients');
   const [showChartInClientsTab, setShowChartInClientsTab] = useState<boolean>(true);
 
   // EFÍ BANK GATEWAY CONFIG & TESTING STATE
@@ -152,6 +158,56 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     } finally {
       setWaDismissing((prev) => { const n = new Set(prev); n.delete(id); return n; });
     }
+  };
+
+  // WMANAGE STATE
+  interface WzClient {
+    id: number; username: string; password: string; status: number; is_trial: number;
+    exp_date: string; whatsapp: string; notes: string; planId: number;
+    plan?: { name: string }; createdAt: string;
+  }
+  interface WzList { items: WzClient[]; total: number; actualPage: number; pagesQuantity: number; }
+  const [wzClients, setWzClients] = useState<WzList | null>(null);
+  const [wzLoading, setWzLoading] = useState(false);
+  const [wzSearch, setWzSearch] = useState('');
+  const [wzFilter, setWzFilter] = useState<'all' | 'expiring' | 'expired' | 'blocked'>('all');
+  const [wzPage, setWzPage] = useState(1);
+  const [wzActionStatus, setWzActionStatus] = useState<Record<number, string>>({});
+  const [wzExtendDays, setWzExtendDays] = useState<Record<number, string>>({});
+
+  const fetchWzClients = async (page = 1, search = wzSearch, filter = wzFilter) => {
+    setWzLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), quantityPerPage: '20' });
+      if (search) params.set('generalSearch', search);
+      if (filter === 'expiring') params.set('closeToExpire', 'true');
+      else if (filter === 'expired') params.set('expired', '1');
+      else if (filter === 'blocked') params.set('status', '0');
+      const r = await fetch(`/api/wmanage/clients?${params}`);
+      if (r.ok) setWzClients(await r.json());
+    } catch { /* silencioso */ }
+    setWzLoading(false);
+  };
+
+  useEffect(() => {
+    if (activeAdminTab === 'wmanage' && !wzClients) fetchWzClients();
+  }, [activeAdminTab]);
+
+  const wzAction = async (clientId: number, label: string, url: string, body?: Record<string, unknown>) => {
+    setWzActionStatus((prev) => ({ ...prev, [clientId]: label }));
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const d = await r.json();
+      setWzActionStatus((prev) => ({ ...prev, [clientId]: r.ok ? '✓ OK' : `Erro: ${d.message || r.status}` }));
+      if (r.ok) fetchWzClients(wzPage);
+    } catch (e) {
+      setWzActionStatus((prev) => ({ ...prev, [clientId]: 'Falha na requisição' }));
+    }
+    setTimeout(() => setWzActionStatus((prev) => { const n = { ...prev }; delete n[clientId]; return n; }), 3500);
   };
 
   // SYSTEM LOGS STATE
@@ -1017,6 +1073,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 {waAlerts.length}
               </span>
             )}
+          </button>
+
+          <button
+            onClick={() => { soundEffects.playClick(); setActiveAdminTab('wmanage'); }}
+            className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
+              activeAdminTab === 'wmanage'
+                ? 'bg-[#00F59B] text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-white bg-[#0a1e16]'
+            }`}
+          >
+            <Server className="w-4 h-4 text-cyan-400" />
+            Servidor IPTV
           </button>
         </div>
 
@@ -3370,6 +3438,183 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <p>• <span className="text-slate-400">Imagem</span>: IA analisa se é comprovante de pagamento — se for, aparece aqui e o cliente recebe confirmação</p>
               <p>• Clique em <span className="text-[#00F59B]">Verificado</span> após confirmar o pagamento no sistema</p>
             </div>
+          </div>
+        )}
+
+        {/* TAB 10: SERVIDOR IPTV — WMANAGE */}
+        {activeAdminTab === 'wmanage' && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-gradient-to-r from-[#061e14] via-[#04150e] to-[#020b07] border border-cyan-500/40 rounded-3xl shadow-xl">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 flex-shrink-0">
+                  <Server className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white font-display">Servidor IPTV — WManage</h3>
+                  <p className="text-slate-400 text-sm mt-0.5">Gerencie clientes, renovações e ativações diretamente do servidor</p>
+                </div>
+              </div>
+              <button
+                onClick={() => fetchWzClients(wzPage, wzSearch, wzFilter)}
+                disabled={wzLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-cyan-500/20 border border-cyan-500/40 rounded-xl text-cyan-300 text-sm font-bold hover:bg-cyan-500/30 transition disabled:opacity-50"
+              >
+                <RefreshCcw className={`w-4 h-4 ${wzLoading ? 'animate-spin' : ''}`} />
+                Atualizar
+              </button>
+            </div>
+
+            {/* Filtros e busca */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="text"
+                placeholder="Buscar por usuário, WhatsApp ou notas..."
+                value={wzSearch}
+                onChange={(e) => setWzSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && fetchWzClients(1, wzSearch, wzFilter)}
+                className="flex-1 bg-[#05130d] border border-emerald-800/80 rounded-xl px-3.5 py-2.5 text-white text-sm focus:border-[#00F59B] outline-none"
+              />
+              <div className="flex gap-2 flex-wrap">
+                {(['all', 'expiring', 'expired', 'blocked'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => { setWzFilter(f); setWzPage(1); fetchWzClients(1, wzSearch, f); }}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition ${wzFilter === f ? 'bg-cyan-500 text-slate-950' : 'bg-[#0a1e16] text-slate-400 hover:text-white'}`}
+                  >
+                    {f === 'all' ? 'Todos' : f === 'expiring' ? '⚠ Vencendo em 7d' : f === 'expired' ? '✗ Expirados' : '🔒 Bloqueados'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Lista de clientes */}
+            {wzLoading ? (
+              <div className="text-center py-16 text-slate-500">
+                <RefreshCcw className="w-8 h-8 animate-spin mx-auto mb-3 text-cyan-500" />
+                <p>Carregando clientes do servidor...</p>
+              </div>
+            ) : wzClients === null ? (
+              <div className="text-center py-16 text-slate-500">
+                <Server className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                <p>Clique em <strong>Atualizar</strong> para carregar os clientes</p>
+              </div>
+            ) : wzClients.total === 0 ? (
+              <div className="text-center py-16 text-slate-500">
+                <p>Nenhum cliente encontrado com os filtros atuais.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500">
+                  {wzClients.total} clientes • Página {wzClients.actualPage}/{wzClients.pagesQuantity}
+                </p>
+                {wzClients.items.map((c) => {
+                  const expDate = new Date(c.exp_date);
+                  const daysLeft = Math.ceil((expDate.getTime() - Date.now()) / 86400000);
+                  const isExpired = daysLeft < 0;
+                  const isClose = daysLeft >= 0 && daysLeft <= 7;
+                  const isBlocked = c.status === 0;
+                  return (
+                    <div key={c.id} className="p-4 bg-[#040f0a] border border-emerald-900/40 rounded-2xl space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-white font-bold">{c.username}</span>
+                            {isBlocked && <span className="text-xs bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 rounded-full">Bloqueado</span>}
+                            {isExpired && !isBlocked && <span className="text-xs bg-orange-500/20 text-orange-400 border border-orange-500/30 px-2 py-0.5 rounded-full">Expirado</span>}
+                            {isClose && !isExpired && !isBlocked && <span className="text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 px-2 py-0.5 rounded-full">Vence em {daysLeft}d</span>}
+                          </div>
+                          <div className="text-xs text-slate-400 mt-0.5 space-x-3">
+                            {c.whatsapp && <span>📱 {c.whatsapp}</span>}
+                            <span>📅 {expDate.toLocaleDateString('pt-BR')}</span>
+                            {c.plan?.name && <span>📦 {c.plan.name}</span>}
+                            {c.notes && <span>📝 {c.notes}</span>}
+                          </div>
+                        </div>
+                        <div className="text-xs text-slate-500">ID: {c.id}</div>
+                      </div>
+
+                      {/* Ações */}
+                      <div className="flex flex-wrap gap-2 items-center">
+                        {/* Renovar */}
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="1"
+                            max="365"
+                            placeholder="dias"
+                            value={wzExtendDays[c.id] || ''}
+                            onChange={(e) => setWzExtendDays((p) => ({ ...p, [c.id]: e.target.value }))}
+                            className="w-16 bg-[#05130d] border border-emerald-800/60 rounded-lg px-2 py-1.5 text-white text-xs focus:border-[#00F59B] outline-none"
+                          />
+                          <button
+                            onClick={() => wzAction(c.id, 'Renovando...', `/api/wmanage/clients/${c.id}/extend`, { days: parseInt(wzExtendDays[c.id] || '30') })}
+                            disabled={!!wzActionStatus[c.id]}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500/20 border border-emerald-500/40 rounded-lg text-emerald-300 text-xs font-bold hover:bg-emerald-500/30 transition disabled:opacity-50"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            Renovar
+                          </button>
+                        </div>
+
+                        {/* +48h */}
+                        <button
+                          onClick={() => wzAction(c.id, '+48h...', `/api/wmanage/clients/${c.id}/add48h`)}
+                          disabled={!!wzActionStatus[c.id]}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-blue-500/20 border border-blue-500/40 rounded-lg text-blue-300 text-xs font-bold hover:bg-blue-500/30 transition disabled:opacity-50"
+                        >
+                          <Timer className="w-3.5 h-3.5" />
+                          +48h
+                        </button>
+
+                        {/* Bloquear / Desbloquear */}
+                        {isBlocked ? (
+                          <button
+                            onClick={() => wzAction(c.id, 'Desbloqueando...', `/api/wmanage/clients/${c.id}/unblock`)}
+                            disabled={!!wzActionStatus[c.id]}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-green-500/20 border border-green-500/40 rounded-lg text-green-300 text-xs font-bold hover:bg-green-500/30 transition disabled:opacity-50"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            Desbloquear
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => wzAction(c.id, 'Bloqueando...', `/api/wmanage/clients/${c.id}/block`)}
+                            disabled={!!wzActionStatus[c.id]}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-red-500/20 border border-red-500/40 rounded-lg text-red-300 text-xs font-bold hover:bg-red-500/30 transition disabled:opacity-50"
+                          >
+                            <Ban className="w-3.5 h-3.5" />
+                            Bloquear
+                          </button>
+                        )}
+
+                        {/* Status feedback */}
+                        {wzActionStatus[c.id] && (
+                          <span className="text-xs text-cyan-400 font-mono animate-pulse">{wzActionStatus[c.id]}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* Paginação */}
+                {wzClients.pagesQuantity > 1 && (
+                  <div className="flex justify-center gap-2 pt-2">
+                    <button
+                      disabled={wzPage <= 1}
+                      onClick={() => { const p = wzPage - 1; setWzPage(p); fetchWzClients(p); }}
+                      className="px-4 py-2 bg-[#0a1e16] text-slate-400 rounded-xl text-xs disabled:opacity-30 hover:text-white transition"
+                    >← Anterior</button>
+                    <span className="px-4 py-2 text-xs text-slate-500">{wzPage} / {wzClients.pagesQuantity}</span>
+                    <button
+                      disabled={wzPage >= wzClients.pagesQuantity}
+                      onClick={() => { const p = wzPage + 1; setWzPage(p); fetchWzClients(p); }}
+                      className="px-4 py-2 bg-[#0a1e16] text-slate-400 rounded-xl text-xs disabled:opacity-30 hover:text-white transition"
+                    >Próxima →</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
