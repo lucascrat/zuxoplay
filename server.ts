@@ -493,11 +493,12 @@ loadWaAlerts();
 
 async function sendWaText(phone: string, text: string) {
   try {
-    await fetch(`${EVO_API_URL}/message/sendText/${EVO_INSTANCE}`, {
+    const r = await fetch(`${EVO_API_URL}/message/sendText/${EVO_INSTANCE}`, {
       method: 'POST',
       headers: { apikey: EVO_API_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({ number: phone, text }),
     });
+    if (!r.ok) console.error(`[WA Bot] sendText ${r.status} para ${phone}:`, await r.text());
   } catch (err) {
     console.error('[WA Bot] sendText failed:', err);
   }
@@ -551,7 +552,11 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
     if (msg?.key?.fromMe) continue;
     if (msg?.key?.remoteJid?.endsWith('@g.us')) continue; // Ignora grupos
 
-    const phone: string = msg.key?.remoteJid || '';
+    // Contatos com ID de privacidade (@lid) só aceitam resposta pelo número real em remoteJidAlt
+    const jid: string = msg.key?.remoteJid || '';
+    const phone: string = jid.endsWith('@lid')
+      ? msg.key?.remoteJidAlt || msg.key?.senderPn || jid
+      : jid;
     const name: string = msg.pushName || 'Cliente';
 
     try {
