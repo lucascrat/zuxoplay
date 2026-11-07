@@ -38,7 +38,8 @@ import {
   Link as LinkIcon,
   Key,
   Copy,
-  ShieldAlert
+  ShieldAlert,
+  MessageSquare
 } from 'lucide-react';
 import { TrailerItem, ClientApp, ProgramItem, UserProfile, PushNotification, NotificationType, SystemLog } from '../types';
 import { soundEffects } from '../utils/audio';
@@ -112,7 +113,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onAddSystemLog,
   onDeleteSystemLog,
 }) => {
-  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'revenue' | 'notifications' | 'logs' | 'apps' | 'trailers' | 'guide' | 'gateway'>('clients');
+  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'revenue' | 'notifications' | 'logs' | 'apps' | 'trailers' | 'guide' | 'gateway' | 'whatsapp'>('clients');
   const [showChartInClientsTab, setShowChartInClientsTab] = useState<boolean>(true);
 
   // EFÍ BANK GATEWAY CONFIG & TESTING STATE
@@ -125,6 +126,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     getEfiGatewayConfig().then(setEfiGatewayInfo).catch(console.warn);
   }, []);
+
+  // WHATSAPP RECEIPT ALERTS
+  interface WaAlert { id: string; clientPhone: string; clientName: string; aiAnalysis: string; createdAt: string; read: boolean; }
+  const [waAlerts, setWaAlerts] = useState<WaAlert[]>([]);
+  const [waDismissing, setWaDismissing] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    const fetchWaAlerts = async () => {
+      try {
+        const r = await fetch('/api/whatsapp/alerts');
+        if (r.ok) { const d = await r.json(); setWaAlerts(d.alerts || []); }
+      } catch { /* silencioso */ }
+    };
+    fetchWaAlerts();
+    const iv = setInterval(fetchWaAlerts, 30000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const dismissWaAlert = async (id: string) => {
+    setWaDismissing((prev) => new Set(prev).add(id));
+    try {
+      await fetch(`/api/whatsapp/alerts/${id}/read`, { method: 'POST' });
+      setWaAlerts((prev) => prev.filter((a) => a.id !== id));
+    } finally {
+      setWaDismissing((prev) => { const n = new Set(prev); n.delete(id); return n; });
+    }
+  };
 
   // SYSTEM LOGS STATE
   const [localSystemLogs, setLocalSystemLogs] = useState<SystemLog[]>(
@@ -972,6 +1000,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           >
             <Zap className="w-4 h-4 text-amber-400" />
             Gateway Efí Bank PIX
+          </button>
+
+          <button
+            onClick={() => { soundEffects.playClick(); setActiveAdminTab('whatsapp'); }}
+            className={`relative py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
+              activeAdminTab === 'whatsapp'
+                ? 'bg-[#00F59B] text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-white bg-[#0a1e16]'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4 text-green-400" />
+            WhatsApp Bot
+            {waAlerts.length > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-black rounded-full flex items-center justify-center px-1 shadow-lg animate-pulse">
+                {waAlerts.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -3215,6 +3260,115 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 9: WHATSAPP BOT — ALERTAS DE COMPROVANTE */}
+        {activeAdminTab === 'whatsapp' && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* Header */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-gradient-to-r from-[#061e14] via-[#04150e] to-[#020b07] border border-emerald-500/40 rounded-3xl shadow-xl">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-2xl bg-green-500/10 border border-green-500/30 flex items-center justify-center text-green-400 flex-shrink-0">
+                  <MessageSquare className="w-8 h-8" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white font-display">WhatsApp Bot — Atendimento IA</h3>
+                  <p className="text-slate-400 text-sm mt-0.5">Instância <span className="text-[#00F59B] font-bold">zuxo-atendimento</span> • DeepSeek AI ativo</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-green-950/60 border border-green-700/40 text-green-400 text-xs font-bold">
+                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  Conectado
+                </span>
+                <a
+                  href="http://evo-l9pie3sleu8t5tachkm22fq1.169.58.45.200.sslip.io/manager"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0a1e16] border border-emerald-800/40 text-slate-400 hover:text-white text-xs font-bold transition-all"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Manager
+                </a>
+              </div>
+            </div>
+
+            {/* Alertas de Comprovante */}
+            <div className="bg-[#040f0a] border border-emerald-900/40 rounded-3xl overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-emerald-900/40 bg-[#061008]/60">
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-[#00F59B]" />
+                  <span className="text-sm font-black text-white uppercase tracking-wider">Comprovantes Recebidos</span>
+                  {waAlerts.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-500/20 text-red-400 border border-red-500/30">
+                      {waAlerts.length} novo{waAlerts.length > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {waAlerts.length === 0 ? (
+                <div className="py-16 flex flex-col items-center gap-3 text-slate-600">
+                  <MessageSquare className="w-10 h-10" />
+                  <p className="text-sm font-medium">Nenhum comprovante pendente</p>
+                  <p className="text-xs">Quando um cliente enviar um comprovante pelo WhatsApp, aparecerá aqui</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-emerald-900/30">
+                  {waAlerts.map((alert) => (
+                    <div key={alert.id} className="p-5 flex flex-col sm:flex-row sm:items-start gap-4 hover:bg-emerald-950/20 transition-colors">
+                      {/* Avatar / ícone */}
+                      <div className="w-11 h-11 rounded-2xl bg-green-900/30 border border-green-800/40 flex items-center justify-center text-green-400 flex-shrink-0">
+                        <MessageSquare className="w-5 h-5" />
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="text-white font-black text-sm">{alert.clientName}</span>
+                          <span className="text-slate-500 text-xs font-mono">{alert.clientPhone.replace('@s.whatsapp.net', '')}</span>
+                          <span className="text-slate-600 text-[10px]">{new Date(alert.createdAt).toLocaleString('pt-BR')}</span>
+                        </div>
+                        <p className="text-slate-400 text-xs leading-relaxed bg-slate-900/40 rounded-xl px-3 py-2 border border-slate-800/40">
+                          🤖 <span className="text-slate-300">{alert.aiAnalysis}</span>
+                        </p>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <a
+                          href={`/api/whatsapp/alerts/${alert.id}/image`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/40 text-slate-300 hover:text-white text-xs font-bold transition-all"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          Ver
+                        </a>
+                        <button
+                          onClick={() => dismissWaAlert(alert.id)}
+                          disabled={waDismissing.has(alert.id)}
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-800/40 text-[#00F59B] hover:bg-emerald-900/40 text-xs font-bold transition-all disabled:opacity-50"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          Verificado
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Instruções */}
+            <div className="p-5 bg-[#040f0a] border border-emerald-900/30 rounded-2xl text-xs text-slate-500 space-y-1">
+              <p className="font-bold text-slate-400 mb-2">ℹ️ Como funciona</p>
+              <p>• Clientes enviam mensagens no WhatsApp do número conectado</p>
+              <p>• <span className="text-slate-400">Texto</span>: DeepSeek responde automaticamente sobre planos, instalação de apps, dúvidas gerais</p>
+              <p>• <span className="text-slate-400">Imagem</span>: IA analisa se é comprovante de pagamento — se for, aparece aqui e o cliente recebe confirmação</p>
+              <p>• Clique em <span className="text-[#00F59B]">Verificado</span> após confirmar o pagamento no sistema</p>
             </div>
           </div>
         )}
