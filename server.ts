@@ -454,6 +454,201 @@ app.post('/api/pix/simulate-pay', (req: Request, res: Response) => {
   });
 });
 
+// --- WHATSAPP BOT ---
+const EVO_API_URL = process.env.EVO_API_URL || '';
+const EVO_API_KEY = process.env.EVO_API_KEY || '';
+const EVO_INSTANCE = process.env.EVO_INSTANCE || 'zuxo-atendimento';
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || '';
+
+interface WaReceiptAlert {
+  id: string;
+  clientPhone: string;
+  clientName: string;
+  imageBase64?: string;
+  aiAnalysis: string;
+  createdAt: string;
+  read: boolean;
+}
+
+const WA_ALERTS_FILE = path.resolve(DATA_DIR, 'whatsapp_alerts.json');
+const waAlerts: WaReceiptAlert[] = [];
+
+function loadWaAlerts() {
+  try {
+    if (fs.existsSync(WA_ALERTS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(WA_ALERTS_FILE, 'utf-8')) as WaReceiptAlert[];
+      waAlerts.push(...data);
+    }
+  } catch { /* ignore */ }
+}
+
+function saveWaAlerts() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(WA_ALERTS_FILE, JSON.stringify(waAlerts, null, 2), 'utf-8');
+  } catch { /* ignore */ }
+}
+
+loadWaAlerts();
+
+async function sendWaText(phone: string, text: string) {
+  try {
+    await fetch(`${EVO_API_URL}/message/sendText/${EVO_INSTANCE}`, {
+      method: 'POST',
+      headers: { apikey: EVO_API_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ number: phone, text }),
+    });
+  } catch (err) {
+    console.error('[WA Bot] sendText failed:', err);
+  }
+}
+
+async function deepseekChat(messages: { role: string; content: any }[]): Promise<string> {
+  if (!DEEPSEEK_API_KEY) return '';
+  const resp = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${DEEPSEEK_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'deepseek-chat', messages, max_tokens: 500, temperature: 0.7 }),
+  });
+  const data = (await resp.json()) as any;
+  return data?.choices?.[0]?.message?.content || '';
+}
+
+async function checkReceiptWithAI(base64: string, mime: string): Promise<{ isReceipt: boolean; details: string }> {
+  if (!DEEPSEEK_API_KEY) return { isReceipt: true, details: 'Sem API key — imagem salva para revisão manual.' };
+  try {
+    const reply = await deepseekChat([{
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: `data:${mime};base64,${base64}` } },
+        { type: 'text', text: 'Essa imagem é um comprovante de pagamento (PIX, transferência bancária, boleto pago, recibo)? Responda APENAS: SIM - [descrição breve] ou NÃO - [motivo].' },
+      ],
+    }]);
+    return { isReceipt: reply.trim().toUpperCase().startsWith('SIM'), details: reply.trim() };
+  } catch {
+    // Vision não disponível: assumir que é comprovante para não perder nada
+    return { isReceipt: true, details: 'Análise de imagem indisponível — salvo para revisão manual.' };
+  }
+}
+
+// Webhook receptor da Evolution API
+app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
+  res.status(200).send('OK'); // Responde imediatamente
+
+  const payload = req.body;
+  if (!payload?.event || payload.event !== 'MESSAGES_UPSERT') return;
+
+  // Suporta formato v1 (data.messages[]) e v2 (data é a mensagem)
+  const messages: any[] = Array.isArray(payload.data?.messages)
+    ? payload.data.messages
+    : payload.data
+      ? [payload.data]
+      : [];
+
+  for (const msg of messages) {
+    if (msg?.key?.fromMe) continue;
+    if (msg?.key?.remoteJid?.endsWith('@g.us')) continue; // Ignora grupos
+
+    const phone: string = msg.key?.remoteJid || '';
+    const name: string = msg.pushName || 'Cliente';
+
+    try {
+      const hasImage = msg.message?.imageMessage || msg.message?.documentMessage;
+      const textContent: string =
+        msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+
+      if (hasImage) {
+        // Baixar mídia
+        let base64 = '';
+        let mime = 'image/jpeg';
+        try {
+          const mediaResp = await fetch(
+            `${EVO_API_URL}/chat/getBase64FromMediaMessage/${EVO_INSTANCE}`,
+            {
+              method: 'POST',
+              headers: { apikey: EVO_API_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ message: { key: msg.key, message: msg.message } }),
+            }
+          );
+          const mediaData = (await mediaResp.json()) as any;
+          base64 = mediaData?.base64 || '';
+          mime = mediaData?.mimetype || mime;
+        } catch { /* download falhou */ }
+
+        const { isReceipt, details } = await checkReceiptWithAI(base64, mime);
+
+        if (isReceipt) {
+          const alert: WaReceiptAlert = {
+            id: `wa-${Date.now()}`,
+            clientPhone: phone,
+            clientName: name,
+            imageBase64: base64 || undefined,
+            aiAnalysis: details,
+            createdAt: new Date().toISOString(),
+            read: false,
+          };
+          waAlerts.push(alert);
+          saveWaAlerts();
+          console.log(`[WA Bot] Comprovante recebido de ${name} (${phone})`);
+          await sendWaText(phone, `✅ Comprovante recebido, ${name}! Obrigado. Vamos verificar e liberar seu acesso em breve. Se tiver dúvidas, é só perguntar!`);
+        } else {
+          await sendWaText(phone, `Olá, ${name}! Recebi sua imagem. Se for um comprovante de pagamento, pode me enviar novamente em boa resolução. Para dúvidas sobre planos ou instalação dos apps, é só perguntar! 😊`);
+        }
+      } else if (textContent) {
+        if (!DEEPSEEK_API_KEY) {
+          await sendWaText(phone, `Olá, ${name}! Recebemos sua mensagem. Um atendente humano vai responder em breve. 🙂`);
+          continue;
+        }
+
+        const reply = await deepseekChat([
+          {
+            role: 'system',
+            content:
+              'Você é o atendente virtual da Zuxo Player, serviço de IPTV premium. ' +
+              'Responda sempre em português brasileiro, de forma simpática, profissional e objetiva. ' +
+              'Você pode ajudar com: planos de assinatura (mensal, trimestral, semestral, anual), ' +
+              'instalação e configuração dos apps compatíveis (ZUXO Player, Quick Player, Quick Player PRO, QPlay, Big Player, GTV Player, Quick Plus+, RX Purple, CORTEX Player, UTM Play), ' +
+              'acesso via Xtream Codes (provedor + usuário + senha fornecidos pelo admin), ' +
+              'problemas de acesso, informações sobre pagamento via PIX. ' +
+              'Se não souber algo específico sobre a conta do cliente, diga que vai encaminhar para um atendente humano. ' +
+              'Seja conciso — máximo 3 parágrafos curtos.',
+          },
+          { role: 'user', content: `${name}: ${textContent}` },
+        ]);
+
+        if (reply) await sendWaText(phone, reply);
+      }
+    } catch (err) {
+      console.error(`[WA Bot] Erro ao processar mensagem de ${phone}:`, err);
+    }
+  }
+});
+
+// Admin: listar alertas de comprovantes não lidos
+app.get('/api/whatsapp/alerts', (_req: Request, res: Response) => {
+  const unread = waAlerts
+    .filter((a) => !a.read)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map(({ imageBase64: _, ...rest }) => rest); // Omite base64 na listagem
+  res.json({ alerts: unread, total: waAlerts.length });
+});
+
+// Admin: marcar alerta como lido
+app.post('/api/whatsapp/alerts/:id/read', (req: Request, res: Response) => {
+  const alert = waAlerts.find((a) => a.id === req.params.id);
+  if (alert) { alert.read = true; saveWaAlerts(); }
+  res.json({ success: true });
+});
+
+// Admin: obter imagem do comprovante
+app.get('/api/whatsapp/alerts/:id/image', (req: Request, res: Response) => {
+  const alert = waAlerts.find((a) => a.id === req.params.id);
+  if (!alert?.imageBase64) return res.status(404).json({ error: 'Imagem não encontrada' });
+  const buf = Buffer.from(alert.imageBase64, 'base64');
+  res.setHeader('Content-Type', 'image/jpeg');
+  res.send(buf);
+});
+
 // --- VITE MIDDLEWARE SETUP ---
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production';
