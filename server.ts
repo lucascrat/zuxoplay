@@ -539,6 +539,9 @@ interface WaLine {
   status: number;
   isTrial: number;
   maxConnections: number;
+  // Fica só no servidor: a IA escreve [[SENHA:usuario]] e fillWaPasswords troca pela senha real
+  password: string;
+  byPhone: boolean;
 }
 
 interface WaSession {
@@ -573,7 +576,7 @@ function normalizeBrPhone(raw: string): string {
   return d;
 }
 
-function toWaLine(item: any): WaLine {
+function toWaLine(item: any, byPhone: boolean): WaLine {
   return {
     username: item.username,
     plan: item.plan?.name || '',
@@ -581,7 +584,19 @@ function toWaLine(item: any): WaLine {
     status: item.status,
     isTrial: item.is_trial,
     maxConnections: item.max_connections,
+    password: item.password || '',
+    byPhone,
   };
+}
+
+// Senha só vai para o WhatsApp cadastrado na própria linha; quem só digitou o usuário não recebe
+function fillWaPasswords(text: string, lines: WaLine[]): string {
+  return text.replace(/\[\[SENHA:([^\]]+)\]\]/g, (_m, user: string) => {
+    const line = lines.find((l) => l.username.toLowerCase() === user.trim().toLowerCase());
+    return line?.byPhone && line.password
+      ? line.password
+      : '(por segurança, a senha só é enviada para o WhatsApp cadastrado na conta)';
+  });
 }
 
 async function searchWzLines(term: string, perPage = 10): Promise<any[]> {
@@ -607,13 +622,13 @@ async function findLinesByPhone(phone: string): Promise<WaLine[]> {
   const seen = new Set<string>();
   return [...a, ...b]
     .filter((i) => i.whatsapp && normalizeBrPhone(i.whatsapp) === target && !seen.has(i.username) && seen.add(i.username))
-    .map(toWaLine);
+    .map((i) => toWaLine(i, true));
 }
 
 async function findLineByUsername(username: string): Promise<WaLine | null> {
   const items = await searchWzLines(username);
   const hit = items.find((i) => String(i.username).toLowerCase() === username.toLowerCase());
-  return hit ? toWaLine(hit) : null;
+  return hit ? toWaLine(hit, false) : null;
 }
 
 // Palavras com letra e número (ex.: b19h749) ou a palavra logo após "usuário"/"login"/"user"
@@ -657,7 +672,10 @@ function describeWaLines(lines: WaLine[]): string {
     const days = Math.ceil((new Date(l.expDate).getTime() - Date.now()) / 86400000);
     const situacao = l.status === 0 ? 'BLOQUEADO' : days < 0 ? 'VENCIDO' : 'ativo';
     const prazo = days < 0 ? `venceu em ${fmt(l.expDate)} (há ${-days} dia(s))` : `vence em ${fmt(l.expDate)} (faltam ${days} dia(s))`;
-    return `- Usuário: ${l.username} | Plano: ${l.plan || 'não informado'} | Telas: ${l.maxConnections} | Situação: ${situacao}${l.isTrial ? ' (teste)' : ''} | ${prazo}`;
+    const senha = l.byPhone
+      ? `Senha: pode enviar escrevendo exatamente [[SENHA:${l.username}]]`
+      : 'Senha: NÃO pode enviar (identificado só pelo usuário digitado, não pelo WhatsApp cadastrado)';
+    return `- Usuário: ${l.username} | Plano: ${l.plan || 'não informado'} | Telas: ${l.maxConnections} | Situação: ${situacao}${l.isTrial ? ' (teste)' : ''} | ${prazo} | ${senha}`;
   });
   return `CLIENTE IDENTIFICADO — dados consultados agora no servidor:\n${rows.join('\n')}`;
 }
@@ -750,10 +768,17 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
               'Você é o atendente virtual da Zuxo Player, serviço de IPTV premium. ' +
               'Responda sempre em português brasileiro, de forma simpática, profissional e objetiva. ' +
               'Você pode ajudar com: planos de assinatura (mensal, trimestral, semestral, anual), ' +
-              'instalação e configuração dos apps compatíveis (ZUXO Player, Quick Player, Quick Player PRO, QPlay, Big Player, GTV Player, Quick Plus+, RX Purple, CORTEX Player, UTM Play), ' +
+              'instalação e configuração dos apps compatíveis (MaxPlayer, ZUXO Player, Quick Player, Quick Player PRO, QPlay, Big Player, GTV Player, Quick Plus+, RX Purple, CORTEX Player, UTM Play), ' +
               'acesso via Xtream Codes (provedor + usuário + senha fornecidos pelo admin), ' +
               'problemas de acesso, informações sobre pagamento via PIX. ' +
-              'Seja conciso — máximo 3 parágrafos curtos.\n\n' +
+              'Seja conciso — máximo 3 parágrafos curtos. ' +
+              'Use a formatação do WhatsApp: *negrito* com um asterisco de cada lado; não use ** nem títulos com #.\n\n' +
+              'App recomendado: MaxPlayer. A ativação é feita direto no nosso painel; o cliente só instala e entra com o usuário e a senha da conta dele. ' +
+              'Funciona em Android, iPhone/iPad, Smart TV Samsung e LG, Fire TV, Roku, Apple TV e Windows, com o mesmo login. Links:\n' +
+              '- Android: https://play.google.com/store/apps/details?id=tv.maxplayer.android\n' +
+              '- iPhone/iPad: https://apps.apple.com/app/maxplayer-iptv-player/id1660982028\n' +
+              '- Outros aparelhos: procurar "MaxPlayer" (sem espaço) na loja do aparelho, ou ver https://maxplayer.tv/pt\n' +
+              'Não mande o cliente criar conta nem pagar no site do MaxPlayer: o acesso já vem com a assinatura Zuxo.\n\n' +
               `Nome do contato no WhatsApp: ${name}\n` +
               describeWaLines(session.lines) + '\n\n' +
               'Regras sobre a conta do cliente:\n' +
@@ -762,7 +787,8 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
               '- Se tiver mais de um usuário, cite todos ou pergunte de qual ele está falando.\n' +
               '- Conta VENCIDA ou perto de vencer: explique que a renovação é por PIX e que ele pode enviar o comprovante aqui mesmo.\n' +
               '- Conta BLOQUEADA: diga que um atendente humano vai verificar.\n' +
-              '- Nunca envie nem confirme senhas. Se pedirem a senha, diga que por segurança um atendente humano vai ajudar.\n' +
+              '- Para passar os dados de acesso (por exemplo, para entrar no MaxPlayer), envie o usuário e, onde for a senha, escreva exatamente o marcador indicado na linha do cliente, como [[SENHA:usuario]]. Nunca escreva uma senha por conta própria.\n' +
+              '- Se a linha disser que a senha NÃO pode ser enviada, explique que por segurança a senha só é enviada para o WhatsApp cadastrado na conta e que um atendente humano pode ajudar.\n' +
               '- Você não renova, não desbloqueia e não altera contas; para isso, encaminhe para um atendente humano.',
           },
           ...session.history,
@@ -772,7 +798,7 @@ app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
         if (reply) {
           session.history.push({ role: 'user', content: textContent }, { role: 'assistant', content: reply });
           session.history.splice(0, Math.max(0, session.history.length - WA_HISTORY_MAX));
-          await sendWaText(phone, reply);
+          await sendWaText(phone, fillWaPasswords(reply, session.lines));
         }
       }
     } catch (err) {

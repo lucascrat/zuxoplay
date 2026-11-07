@@ -293,7 +293,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [credMac, setCredMac] = useState<string>('');
 
   // Known IPTV players for quick catalog selection
-  const IPTV_KNOWN_APPS: Array<{ name: string; platform: ClientApp['platform']; subtitle: string; downloadUrl?: string }> = [
+  const IPTV_KNOWN_APPS: Array<{ name: string; platform: ClientApp['platform']; subtitle: string; downloadUrl?: string; instructions?: string[] }> = [
+    {
+      name: 'MaxPlayer',
+      platform: 'android',
+      subtitle: 'Android, iPhone, Smart TV, Fire TV e Roku — entra com usuário e senha',
+      downloadUrl: 'https://play.google.com/store/apps/details?id=tv.maxplayer.android',
+      instructions: [
+        'Android: baixe na Play Store (play.google.com/store/apps/details?id=tv.maxplayer.android)',
+        'iPhone/iPad: baixe na App Store (apps.apple.com/app/maxplayer-iptv-player/id1660982028)',
+        'Smart TV, Fire TV, Roku e outros: procure "MaxPlayer" na loja do aparelho ou veja maxplayer.tv/pt',
+        'Abra o app e entre com o Usuário e a Senha exibidos nos seus dados de acesso abaixo — a ativação já é feita pelo nosso painel',
+      ],
+    },
     { name: 'Quick Player', platform: 'android', subtitle: 'Player IPTV para Android' },
     { name: 'Quick Player PRO', platform: 'android', subtitle: 'Versão PRO do Quick Player' },
     { name: 'QPlay', platform: 'android', subtitle: 'QPlay IPTV Player' },
@@ -652,7 +664,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       version: 'v1.0',
       status: 'ativo',
       downloadUrl: preset.downloadUrl,
-      instructions: [
+      instructions: preset.instructions || [
         'Baixe e instale o aplicativo',
         'Abra o app e toque em "Adicionar" ou "Novo Portal"',
         'Digite o Provedor, Usuário e Senha exibidos nos seus dados de acesso abaixo',
