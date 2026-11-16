@@ -75,3 +75,13 @@ export function parseVideoSource(url: string, isMuted: boolean = true): VideoSou
     directUrl: url
   };
 }
+
+/**
+ * Returns a 16:9 thumbnail for a trailer: the YouTube frame when the video is on YouTube,
+ * otherwise the poster registered for it.
+ */
+export function getTrailerThumbnail(videoUrl: string, poster?: string, quality: 'mq' | 'hq' = 'mq'): string {
+  const ytId = extractYouTubeId(videoUrl);
+  if (ytId) return `https://i.ytimg.com/vi/${ytId}/${quality}default.jpg`;
+  return poster || '';
+}

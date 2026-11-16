@@ -52,6 +52,12 @@ export interface TrailerItem {
   createdAt?: string;
   type?: 'filme' | 'serie' | 'lancamento' | 'aguardado';
   streamingPlatform?: 'Netflix' | 'Max' | 'Prime Video' | 'Disney+' | 'Cinema 4K' | 'Apple TV+' | 'Paramount+' | 'Zuxo VIP';
+  /** Idioma do áudio do trailer: dublado em português, produção nacional ou legendado. */
+  audio?: 'dublado' | 'nacional' | 'legendado';
+  /** Data de estreia nos cinemas (AAAA-MM-DD). Usada para os selos "Em cartaz" / "Estreia dd/mm". */
+  releaseDate?: string;
+  /** Posição no feed (menor aparece primeiro). Trailers sem posição entram no topo. */
+  sortOrder?: number;
 }
 
 export interface ClientApp {
