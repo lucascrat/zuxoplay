@@ -366,6 +366,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [trFeaturedTag, setTrFeaturedTag] = useState<string>('Estreia Exclusiva 2026');
   const [trType, setTrType] = useState<TrailerItem['type']>('lancamento');
   const [trPlatform, setTrPlatform] = useState<TrailerItem['streamingPlatform']>('Cinema 4K');
+  const [trAudio, setTrAudio] = useState<NonNullable<TrailerItem['audio']>>('dublado');
+  const [trReleaseDate, setTrReleaseDate] = useState<string>('');
 
   // APP FORM STATE (GLOBAL)
   const [isAppFormOpen, setIsAppFormOpen] = useState<boolean>(false);
@@ -770,6 +772,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           featuredTag: trFeaturedTag,
           type: trType,
           streamingPlatform: trPlatform,
+          audio: trAudio,
+          ...(trReleaseDate ? { releaseDate: trReleaseDate } : {}),
         });
       }
     } else {
@@ -783,6 +787,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         featuredTag: trFeaturedTag,
         type: trType,
         streamingPlatform: trPlatform,
+        audio: trAudio,
+        ...(trReleaseDate ? { releaseDate: trReleaseDate } : {}),
+        createdAt: new Date().toISOString().split('T')[0],
       });
     }
 
@@ -1058,7 +1065,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             }`}
           >
             <Video className="w-4 h-4" />
-            Trailers 9:16 ({trailers.length})
+            Trailers ({trailers.length})
           </button>
 
           <button
@@ -2710,10 +2717,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white font-display">
-                  Trailers Verticais 9:16 do Feed
+                  Trailers do Feed
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Vídeos verticais cadastrados para exibição na tela inicial
+                  Trailers de filmes e séries exibidos na tela inicial
                 </p>
               </div>
 
@@ -2782,6 +2789,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <option value="Disney+">Disney+</option>
                       <option value="Prime Video">Prime Video</option>
                       <option value="Apple TV+">Apple TV+</option>
+                      <option value="Paramount+">Paramount+</option>
                       <option value="Zuxo VIP">Zuxo VIP</option>
                     </select>
                   </div>
@@ -2792,6 +2800,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       value={trFeaturedTag}
                       onChange={(e) => setTrFeaturedTag(e.target.value)}
                       placeholder="Ex: 🔥 Em Alta / Mais Aguardado"
+                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-300 mb-1">Áudio do Trailer:</label>
+                    <select
+                      value={trAudio}
+                      onChange={(e) => setTrAudio(e.target.value as NonNullable<TrailerItem['audio']>)}
+                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white"
+                    >
+                      <option value="dublado">Dublado</option>
+                      <option value="nacional">Nacional (produção brasileira)</option>
+                      <option value="legendado">Legendado</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 mb-1">Estreia nos cinemas (opcional):</label>
+                    <input
+                      type="date"
+                      value={trReleaseDate}
+                      onChange={(e) => setTrReleaseDate(e.target.value)}
                       className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white"
                     />
                   </div>

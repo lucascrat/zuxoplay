@@ -41,19 +41,29 @@ export async function seedInitialFirestoreData() {
       }
     }
 
-    // 2. Trailers — upsert current list; remove old default IDs no longer in INITIAL_TRAILERS.
-    // Admin-added trailers (not listed here) are intentionally preserved.
+    // 2. Trailers — add catalog entries that are missing and remove retired default IDs.
+    // Existing docs are left untouched so likes and admin edits survive; admin-added trailers are preserved.
     const DEPRECATED_TRAILER_IDS = [
       'tr-avatar2', 'tr-strangerthings5', 'tr-houseofdragon',
       'tr-shogun', 'tr-johnwick4', 'tr-avengers-endgame',
       'tr-matrix', 'tr-interstellar', 'tr-multiverse',
+      'tr-superman-2025', 'tr-mi-final-reckoning', 'tr-jurassic-rebirth',
+      'tr-fantastic-four', 'tr-thunderbolts', 'tr-gladiator2',
+      'tr-tulsa-king-s2', 'tr-severance-s2', 'tr-white-lotus-s3',
+      'tr-lastofus-s2', 'tr-houseofdragon-s2', 'tr-deadpool3', 'tr-dune2',
     ];
-    await Promise.all(DEPRECATED_TRAILER_IDS.map((id) =>
-      deleteDoc(doc(db, 'trailers', id)).catch(() => {})
-    ));
-    for (const trailer of INITIAL_TRAILERS) {
-      await setDoc(doc(db, 'trailers', trailer.id), trailer, { merge: true });
-    }
+    const trailersSnap = await getDocs(collection(db, 'trailers'));
+    const existingTrailerIds = new Set(trailersSnap.docs.map((d) => d.id));
+    await Promise.all(
+      DEPRECATED_TRAILER_IDS.filter((id) => existingTrailerIds.has(id)).map((id) =>
+        deleteDoc(doc(db, 'trailers', id)).catch(() => {})
+      )
+    );
+    await Promise.all(
+      INITIAL_TRAILERS.filter((t) => !existingTrailerIds.has(t.id)).map((t) =>
+        setDoc(doc(db, 'trailers', t.id), t)
+      )
+    );
 
     // 3. Apps - Official store catalog always fresh
     for (const app of INITIAL_APPS) {

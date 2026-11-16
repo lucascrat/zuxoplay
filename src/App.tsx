@@ -62,6 +62,9 @@ import { syncDailyProgramGuide, startEpgAutoTicker } from './services/epgService
 
 const DEFAULT_USER: UserProfile = INITIAL_CLIENTS[0];
 
+// Bump when the built-in trailer catalog changes so browsers drop their cached copy.
+const TRAILERS_CATALOG_VERSION = '2026-11-16';
+
 const DEEP_LINK_SCREENS: ViewScreen[] = ['trailer-feed', 'customer-portal', 'daily-guide', 'admin-panel'];
 
 function getInitialScreen(): ViewScreen {
@@ -122,8 +125,11 @@ export default function App() {
   // TRAILERS STATE (with localStorage)
   const [trailers, setTrailers] = useState<TrailerItem[]>(() => {
     try {
-      const saved = localStorage.getItem('zuxo_trailers');
-      if (saved) return JSON.parse(saved);
+      // The cached list is only reused while it belongs to the current catalog version.
+      if (localStorage.getItem('zuxo_trailers_version') === TRAILERS_CATALOG_VERSION) {
+        const saved = localStorage.getItem('zuxo_trailers');
+        if (saved) return JSON.parse(saved);
+      }
     } catch {}
     return INITIAL_TRAILERS;
   });
@@ -302,6 +308,7 @@ export default function App() {
   useEffect(() => {
     try {
       localStorage.setItem('zuxo_trailers', JSON.stringify(trailers));
+      localStorage.setItem('zuxo_trailers_version', TRAILERS_CATALOG_VERSION);
     } catch {}
   }, [trailers]);
 
@@ -591,7 +598,7 @@ export default function App() {
         </a>
 
         {/* Zone 2: Navigation Links */}
-        <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-300">
+        <nav className="hidden lg:flex items-center gap-6 text-sm font-semibold text-slate-300">
           <button
             onClick={() => {
               soundEffects.playClick();
@@ -687,14 +694,13 @@ export default function App() {
       </header>
 
       {/* MAIN VIEWPORT ROUTER */}
-      <main className="flex-1 flex flex-col w-full relative pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
+      <main className="flex-1 flex flex-col w-full relative pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
         {/* TELA PRINCIPAL: FEED DE TRAILERS 9:16 */}
         {activeScreen === 'trailer-feed' && (
           <TrailerFeedScreen
             trailers={trailers}
             onOpenCustomerPortal={handleAccessCustomerPortal}
             onOpenDailyGuide={() => setActiveScreen('daily-guide')}
-            onOpenAdminPanel={handleAccessAdminPanel}
             onLikeTrailer={handleLikeTrailer}
           />
         )}
@@ -815,7 +821,7 @@ export default function App() {
         )}
       </main>
 
-      <nav className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-[#061610]/95 backdrop-blur-md border-t border-emerald-950/80 pb-[env(safe-area-inset-bottom)]">
+      <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-[#061610]/95 backdrop-blur-md border-t border-emerald-950/80 pb-[env(safe-area-inset-bottom)]">
         <div className="h-16 grid grid-cols-4">
           {[
             { screen: 'trailer-feed' as ViewScreen, label: 'Feed', icon: Flame, onClick: () => { soundEffects.playClick(); setActiveScreen('trailer-feed'); } },
