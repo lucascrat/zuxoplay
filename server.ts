@@ -6,6 +6,8 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import QRCode from 'qrcode';
 import https from 'https';
+import crypto from 'crypto';
+import { ADMIN_AUTH_ENABLED, checkAdminPassword, issueAdminToken, requireAdmin, rateLimit, hashPassword, verifyPassword, safeEqual } from './serverAuth.ts';
 
 dotenv.config();
 
@@ -20,7 +22,33 @@ const portIndex = args.indexOf('--port');
 const portArg = portIndex !== -1 && args[portIndex + 1] ? parseInt(args[portIndex + 1], 10) : undefined;
 const PORT = portArg || (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
+// Behind the Coolify proxy: trust one hop so req.ip is the real visitor address (used by the rate limits).
+app.set('trust proxy', 1);
+
+// A failure in one background task must not stop the whole site: log it and keep serving.
+process.on('unhandledRejection', (reason) => {
+  console.error('[Servidor] Erro não tratado:', reason);
+});
 app.use(express.json({ limit: '10mb' }));
+
+// Everything that manages the business needs the admin session: plans, the IPTV panel (WManage),
+// WhatsApp receipts and the payment list. Public routes (plans for sale, Pix charges) stay open.
+app.use(['/api/admin/plans', '/api/wmanage', '/api/whatsapp', '/api/pix/recent-payments'], requireAdmin);
+
+app.post('/api/admin/login', rateLimit('admin-login', 8, 10 * 60_000), (req: Request, res: Response) => {
+  if (!ADMIN_AUTH_ENABLED) {
+    return res.status(503).json({ error: 'Login de administrador não configurado no servidor (ADMIN_PASSWORD).' });
+  }
+  const password = typeof req.body?.password === 'string' ? req.body.password.slice(0, 200) : '';
+  if (!checkAdminPassword(password)) {
+    return res.status(401).json({ error: 'Senha incorreta.' });
+  }
+  res.json(issueAdminToken());
+});
+
+app.get('/api/admin/session', requireAdmin, (_req: Request, res: Response) => {
+  res.json({ ok: true });
+});
 
 // Efí Bank Environment Configuration
 const EFIBANK_CLIENT_ID = process.env.EFIBANK_CLIENT_ID || 'Client_Id_62a2fe6ca801b2a8c7c688c6d1cc425aca747df4';
@@ -487,7 +515,7 @@ app.delete('/api/admin/plans/:id', (req: Request, res: Response) => {
 });
 
 // 2. Create immediate PIX charge
-app.post('/api/pix/create-charge', async (req: Request, res: Response) => {
+app.post('/api/pix/create-charge', rateLimit('create-charge', 20, 10 * 60_000), async (req: Request, res: Response) => {
   try {
     const { amount, invoiceId, clientId, clientName, description, planId } = req.body;
     // Compra de plano: o preço vem do cadastro de planos, não do navegador
@@ -915,6 +943,11 @@ function describeWaLines(lines: WaLine[]): string {
 
 // Webhook receptor da Evolution API
 app.post('/webhook/whatsapp', async (req: Request, res: Response) => {
+  // Optional shared secret: when WA_WEBHOOK_SECRET is set, only calls that carry it (?secret=...) are accepted.
+  const expectedSecret = process.env.WA_WEBHOOK_SECRET || '';
+  if (expectedSecret && !safeEqual(String(req.query.secret || ''), expectedSecret)) {
+    return res.status(401).send('Unauthorized');
+  }
   res.status(200).send('OK'); // Responde imediatamente
 
   const payload = req.body;
@@ -1096,9 +1129,15 @@ function wzHeaders() {
 async function wzFetch(method: string, path: string, body?: unknown) {
   const opts: RequestInit = { method, headers: wzHeaders() };
   if (body !== undefined) opts.body = JSON.stringify(body);
-  const r = await fetch(`${WZ_BASE}${path}`, opts);
-  const json = await r.json().catch(() => ({}));
-  return { status: r.status, json };
+  try {
+    const r = await fetch(`${WZ_BASE}${path}`, opts);
+    const json = await r.json().catch(() => ({}));
+    return { status: r.status, json };
+  } catch (err) {
+    // The provider being unreachable must answer with an error, not stop the whole server.
+    console.warn('[WManage] Provedor indisponível:', (err as Error).message);
+    return { status: 502, json: { message: 'Não foi possível falar com o servidor IPTV agora.' } };
+  }
 }
 
 // GET /api/wmanage/clients?page=1&quantityPerPage=50&closeToExpire=true&generalSearch=...
@@ -1139,6 +1178,158 @@ app.post('/api/wmanage/clients/:id/unblock', async (req: Request, res: Response)
 app.post('/api/wmanage/clients/:id/add48h', async (req: Request, res: Response) => {
   const { status, json } = await wzFetch('PATCH', `/lines/48-add/${req.params.id}`);
   res.status(status).json(json);
+});
+
+// --- CLIENT ACCOUNTS (sign-in, registration and personal link) ---
+// The server looks the client up and checks the password, so the browser never searches the client list.
+
+function fsFromValue(v: any): any {
+  if (v === undefined || v === null) return undefined;
+  if ('stringValue' in v) return v.stringValue;
+  if ('integerValue' in v) return Number(v.integerValue);
+  if ('doubleValue' in v) return v.doubleValue;
+  if ('booleanValue' in v) return v.booleanValue;
+  if ('nullValue' in v) return null;
+  if ('timestampValue' in v) return v.timestampValue;
+  if ('arrayValue' in v) return (v.arrayValue.values || []).map(fsFromValue);
+  if ('mapValue' in v) return fsFromFields(v.mapValue.fields || {});
+  return undefined;
+}
+
+function fsFromFields(fields: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [key, value] of Object.entries(fields)) out[key] = fsFromValue(value);
+  return out;
+}
+
+function fsToValue(x: any): any {
+  if (x === null) return { nullValue: null };
+  if (typeof x === 'string') return { stringValue: x };
+  if (typeof x === 'boolean') return { booleanValue: x };
+  if (typeof x === 'number') return Number.isInteger(x) ? { integerValue: String(x) } : { doubleValue: x };
+  if (Array.isArray(x)) return { arrayValue: { values: x.map(fsToValue) } };
+  return { mapValue: { fields: fsToFields(x) } };
+}
+
+function fsToFields(obj: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) if (value !== undefined) out[key] = fsToValue(value);
+  return out;
+}
+
+async function fsFindClient(field: 'email' | 'slug', value: string): Promise<Record<string, any> | null> {
+  const res = await fetch(`${FIRESTORE_DOCS}:runQuery?key=${firebaseCfg.apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: 'clients' }],
+        where: { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: value } } },
+        limit: 1,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`consulta de clientes falhou (HTTP ${res.status})`);
+  const rows = (await res.json()) as any[];
+  const doc = rows.find((row) => row.document)?.document;
+  if (!doc) return null;
+  return { ...fsFromFields(doc.fields || {}), id: String(doc.name).split('/').pop() };
+}
+
+async function findClientByEmail(email: string) {
+  return (await fsFindClient('email', email)) || (email !== email.toLowerCase() ? await fsFindClient('email', email.toLowerCase()) : null);
+}
+
+/** What the browser may receive: everything except the stored password hash. */
+function publicClient(client: Record<string, any>) {
+  const { loginPasswordHash: _hash, ...rest } = client;
+  return rest;
+}
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+app.post('/api/client/login', rateLimit('client-login', 10, 10 * 60_000), async (req: Request, res: Response) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim().slice(0, 200) : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password.slice(0, 200) : '';
+  if (!email || !password) return res.status(400).json({ error: 'Informe e-mail e senha.' });
+  try {
+    const client = await findClientByEmail(email);
+    // The password is either the one chosen at registration (hashed) or the app password set by the admin.
+    const ok =
+      !!client &&
+      (verifyPassword(password, client.loginPasswordHash) ||
+        (typeof client.password === 'string' && client.password.length > 0 && safeEqual(password, client.password)));
+    if (!ok) return res.status(401).json({ error: 'E-mail ou senha incorretos.' });
+    res.json({ client: publicClient(client!) });
+  } catch (err) {
+    console.warn('[Cliente] Falha no login:', (err as Error).message);
+    res.status(503).json({ error: 'Não foi possível entrar agora. Tente de novo em instantes.' });
+  }
+});
+
+app.post('/api/client/register', rateLimit('client-register', 5, 60 * 60_000), async (req: Request, res: Response) => {
+  const body = req.body || {};
+  const text = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const name = text(body.name, 80);
+  const email = text(body.email, 120);
+  const password = typeof body.password === 'string' ? body.password.slice(0, 100) : '';
+  const whatsapp = text(body.whatsapp, 30);
+  const plan = text(body.plan, 80) || 'Plano Mensal Zuxo (R$ 35/mês)';
+  let avatar = text(body.avatar, 700_000);
+  if (name.length < 2) return res.status(400).json({ error: 'Informe o seu nome.' });
+  if (!EMAIL_PATTERN.test(email)) return res.status(400).json({ error: 'Informe um e-mail válido.' });
+  if (password.length < 6) return res.status(400).json({ error: 'A senha precisa ter pelo menos 6 caracteres.' });
+  if (!/^(https:\/\/|data:image\/)/.test(avatar)) avatar = '';
+
+  try {
+    if (await findClientByEmail(email)) {
+      return res.status(409).json({ error: 'Este e-mail já está cadastrado. Toque em "Entrar (Login)".' });
+    }
+    const trial = /teste gr[aá]tis/i.test(plan);
+    const vip = plan.includes('VIP');
+    const expiration = todayInBrazil();
+    if (trial) expiration.setUTCDate(expiration.getUTCDate() + 1);
+    const id = `usr-${Date.now()}${crypto.randomBytes(2).toString('hex')}`;
+    const client = {
+      id,
+      name,
+      email,
+      whatsapp,
+      avatar,
+      plan,
+      expirationDate: formatBrDate(expiration),
+      screens: vip ? 3 : 2,
+      customPrice: vip ? 55 : 35,
+      customApps: [],
+      status: trial ? 'ativo' : 'pendente',
+      createdAt: new Date().toISOString().split('T')[0],
+      loginPasswordHash: hashPassword(password),
+    };
+    const created = await fetch(`${FIRESTORE_DOCS}/clients?documentId=${id}&key=${firebaseCfg.apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: fsToFields(client) }),
+    });
+    if (!created.ok) throw new Error(`gravação do cliente falhou (HTTP ${created.status})`);
+    res.status(201).json({ client: publicClient(client) });
+  } catch (err) {
+    console.warn('[Cliente] Falha no cadastro:', (err as Error).message);
+    res.status(503).json({ error: 'Não foi possível concluir o cadastro agora. Tente de novo em instantes.' });
+  }
+});
+
+// Personal link (zuxoplayer.online/<link>): whoever has the link opens that client's area.
+app.get('/api/client/link/:slug', rateLimit('client-link', 60, 10 * 60_000), async (req: Request, res: Response) => {
+  const slug = String(req.params.slug || '').toLowerCase();
+  if (!/^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/.test(slug)) return res.status(404).json({ error: 'Link não encontrado.' });
+  try {
+    const client = await fsFindClient('slug', slug);
+    if (!client) return res.status(404).json({ error: 'Link não encontrado.' });
+    res.json({ client: publicClient(client) });
+  } catch (err) {
+    console.warn('[Cliente] Falha ao abrir o link:', (err as Error).message);
+    res.status(503).json({ error: 'Não foi possível abrir agora.' });
+  }
 });
 
 // --- VITE MIDDLEWARE SETUP ---

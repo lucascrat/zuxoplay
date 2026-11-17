@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ShieldAlert, Lock, Eye, EyeOff, ArrowRight, X, KeyRound, AlertTriangle } from 'lucide-react';
 import { soundEffects } from '../utils/audio';
-
-export const ADMIN_MASTER_PASSWORD = '01Deus02@@@@';
+import { loginAdmin } from '../utils/adminSession';
 
 interface AdminAuthModalProps {
   isOpen: boolean;
@@ -35,7 +34,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e?: React.FormEvent) => {
+  const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!password.trim()) {
       setError('Por favor, informe a senha de acesso.');
@@ -43,19 +42,17 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
     }
 
     setIsSubmitting(true);
-
-    if (password === ADMIN_MASTER_PASSWORD) {
+    try {
+      await loginAdmin(password);
       setError(null);
       soundEffects.playSelect();
-      setTimeout(() => {
-        setIsSubmitting(false);
-        onSuccess();
-      }, 250);
-    } else {
+      onSuccess();
+    } catch (err) {
       soundEffects.playClick();
-      setError('Senha incorreta! Verifique as credenciais e tente novamente.');
+      setError((err as Error).message || 'Não foi possível entrar. Tente de novo.');
       setIsShaking(true);
       setTimeout(() => setIsShaking(false), 500);
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -100,7 +97,6 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
               <span>Senha de Acesso</span>
-              <span className="text-[10px] text-emerald-400/80 font-mono">01Deus02@@@@</span>
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">

@@ -21,15 +21,13 @@ import confetti from 'canvas-confetti';
 import { ZuxoLogo } from './ZuxoLogo';
 import { UserProfile } from '../types';
 import { soundEffects } from '../utils/audio';
+import { loginClient, registerClient } from '../services/clientAuthService';
 
 interface AuthScreenProps {
   isOpen: boolean;
   initialMode?: 'login' | 'register';
-  /** Looks a client up by e-mail. Resolves to null when there is none; rejects when it cannot be checked. */
-  onLookupClient: (email: string) => Promise<UserProfile | null>;
   onClose: () => void;
-  /** isNew is true when the person just registered. */
-  onSuccessAuth: (user: UserProfile, isNew: boolean) => void;
+  onSuccessAuth: (user: UserProfile) => void;
 }
 
 // Curated avatar presets with high-quality styled avatars
@@ -45,7 +43,6 @@ export const AVATAR_PRESETS = [
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   isOpen,
   initialMode = 'login',
-  onLookupClient,
   onClose,
   onSuccessAuth,
 }) => {
@@ -103,7 +100,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   };
 
-  // Login submission: only an existing client can sign in.
+  // Login: the server checks e-mail and password and returns the client only when they match.
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -116,20 +113,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     soundEffects.playSelect();
     setIsChecking(true);
     try {
-      const matched = await onLookupClient(loginEmail);
-      if (matched) {
-        onSuccessAuth(matched, false);
-      } else {
-        setErrorMessage('Não encontramos uma conta com este e-mail. Se você ainda não é cliente, toque em "Cadastrar-se".');
-      }
-    } catch {
-      setErrorMessage('Não foi possível entrar agora. Verifique a sua conexão e tente de novo.');
+      onSuccessAuth(await loginClient(loginEmail, loginPassword));
+    } catch (err) {
+      setErrorMessage((err as Error).message || 'Não foi possível entrar agora.');
     } finally {
       setIsChecking(false);
     }
   };
 
-  // Register submission
+  // Register: the server creates the account (and refuses an e-mail that already has one).
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
@@ -139,50 +131,39 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
 
+    if (regPassword.length < 6) {
+      setErrorMessage('A senha precisa ter pelo menos 6 caracteres.');
+      return;
+    }
+
     if (regPassword !== regConfirmPassword) {
       setErrorMessage('As senhas não coincidem.');
       return;
     }
 
     soundEffects.playSelect();
-
-    // An e-mail that already has an account must not register again (it would open that account).
     setIsChecking(true);
     try {
-      if (await onLookupClient(regEmail)) {
-        setErrorMessage('Este e-mail já está cadastrado. Toque em "Entrar (Login)".');
-        return;
-      }
-    } catch {
-      setErrorMessage('Não foi possível concluir o cadastro agora. Verifique a sua conexão e tente de novo.');
-      return;
+      const created = await registerClient({
+        name: regName,
+        email: regEmail,
+        password: regPassword,
+        whatsapp: regPhone,
+        avatar: regAvatar || AVATAR_PRESETS[0],
+        plan: selectedPlanName,
+      });
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#00F59B', '#10E58F', '#047857', '#FFFFFF']
+      });
+      onSuccessAuth(created);
+    } catch (err) {
+      setErrorMessage((err as Error).message || 'Não foi possível concluir o cadastro agora.');
     } finally {
       setIsChecking(false);
     }
-
-    const newUser: UserProfile = {
-      id: `usr-${Date.now()}`,
-      name: regName,
-      email: regEmail,
-      whatsapp: regPhone || '(11) 98765-4321',
-      avatar: regAvatar || AVATAR_PRESETS[0],
-      plan: selectedPlanName,
-      expirationDate: '11/11/2026',
-      screens: selectedPlanName.includes('VIP') ? 3 : 2,
-      customPrice: selectedPlanName.includes('VIP') ? 55.00 : 35.00,
-      customApps: [],
-      status: 'ativo',
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-
-    confetti({
-      particleCount: 100,
-      spread: 70,
-      origin: { y: 0.6 },
-      colors: ['#00F59B', '#10E58F', '#047857', '#FFFFFF']
-    });
-
-    onSuccessAuth(newUser, true);
   };
 
   return (

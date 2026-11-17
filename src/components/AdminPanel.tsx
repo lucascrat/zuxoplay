@@ -67,6 +67,8 @@ import {
 import { INITIAL_SYSTEM_LOGS } from '../data/appData';
 import { displaySystemPushNotification } from '../services/fcmService';
 import { PaymentsByMonthTab } from './PaymentsByMonthTab';
+import { adminFetch } from '../utils/adminSession';
+import { generatePassword } from '../utils/passwords';
 import { CLIENT_SITE_HOST, clientLinkUrl, isSlugTaken, suggestSlug, validateSlug, normalizeSlug } from '../utils/clientLink';
 import { getEfiGatewayConfig, EfiGatewayConfig, EFIBANK_OFFICIAL_PIX_KEY } from '../services/efiBankService';
 
@@ -147,7 +149,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     const fetchWaAlerts = async () => {
       try {
-        const r = await fetch('/api/whatsapp/alerts');
+        const r = await adminFetch('/api/whatsapp/alerts');
         if (r.ok) { const d = await r.json(); setWaAlerts(d.alerts || []); }
       } catch { /* silencioso */ }
     };
@@ -162,7 +164,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [waBotError, setWaBotError] = useState('');
 
   useEffect(() => {
-    fetch('/api/whatsapp/bot-status')
+    adminFetch('/api/whatsapp/bot-status')
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       .then((d) => setWaBotEnabled(Boolean(d.enabled)))
       .catch(() => setWaBotError('Não foi possível ler o estado do atendente.'));
@@ -174,7 +176,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setWaBotSaving(true);
     setWaBotError('');
     try {
-      const r = await fetch('/api/whatsapp/bot-status', {
+      const r = await adminFetch('/api/whatsapp/bot-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: !waBotEnabled }),
@@ -189,10 +191,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  const openWaReceipt = async (id: string) => {
+    const win = window.open('', '_blank');
+    try {
+      const r = await adminFetch(`/api/whatsapp/alerts/${id}/image`);
+      if (!r.ok) throw new Error();
+      const url = URL.createObjectURL(await r.blob());
+      if (win) win.location.href = url;
+    } catch {
+      win?.close();
+    }
+  };
+
   const dismissWaAlert = async (id: string) => {
     setWaDismissing((prev) => new Set(prev).add(id));
     try {
-      await fetch(`/api/whatsapp/alerts/${id}/read`, { method: 'POST' });
+      await adminFetch(`/api/whatsapp/alerts/${id}/read`, { method: 'POST' });
       setWaAlerts((prev) => prev.filter((a) => a.id !== id));
     } finally {
       setWaDismissing((prev) => { const n = new Set(prev); n.delete(id); return n; });
@@ -222,7 +236,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (filter === 'expiring') params.set('closeToExpire', 'true');
       else if (filter === 'expired') params.set('expired', '1');
       else if (filter === 'blocked') params.set('status', '0');
-      const r = await fetch(`/api/wmanage/clients?${params}`);
+      const r = await adminFetch(`/api/wmanage/clients?${params}`);
       if (r.ok) setWzClients(await r.json());
     } catch { /* silencioso */ }
     setWzLoading(false);
@@ -235,7 +249,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const wzAction = async (clientId: number, label: string, url: string, body?: Record<string, unknown>) => {
     setWzActionStatus((prev) => ({ ...prev, [clientId]: label }));
     try {
-      const r = await fetch(url, {
+      const r = await adminFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         ...(body ? { body: JSON.stringify(body) } : {}),
@@ -306,7 +320,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [cStatus, setCStatus] = useState<'ativo' | 'pendente' | 'expirado'>('ativo');
   const [cProvider, setCProvider] = useState<string>('http://dns.zuxoplayer.live:8080');
   const [cUsername, setCUsername] = useState<string>('');
-  const [cPassword, setCPassword] = useState<string>('zuxo8849pass');
+  const [cPassword, setCPassword] = useState<string>(() => generatePassword());
   const [cNotes, setCNotes] = useState<string>('');
   const [cSlug, setCSlug] = useState<string>('');
   const [cCustomApps, setCCustomApps] = useState<ClientApp[]>([]);
@@ -419,7 +433,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCStatus(client.status || 'ativo');
     setCProvider(client.provider || 'http://dns.zuxoplayer.live:8080');
     setCUsername(client.username || client.email.split('@')[0]);
-    setCPassword(client.password || 'zuxo2026pass');
+    setCPassword(client.password || '');
     setCNotes(client.notes || '');
     setCSlug(client.slug || suggestSlug(client.name, clients, client.id));
     setCCustomApps(client.customApps || apps);
@@ -441,7 +455,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCStatus('ativo');
     setCProvider('http://dns.zuxoplayer.live:8080');
     setCUsername('');
-    setCPassword('zuxo2026pass');
+    setCPassword(generatePassword());
     setCNotes('');
     setCSlug('');
     setCCustomApps([...apps]); // clone default apps
@@ -534,7 +548,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     soundEffects.playSelect();
 
     const finalUsername = cUsername.trim() || cEmail.split('@')[0];
-    const finalPassword = cPassword.trim() || 'zuxo8849pass';
+    const finalPassword = cPassword.trim() || generatePassword();
     const finalProvider = cProvider.trim() || 'http://dns.zuxoplayer.live:8080';
 
     if (isNewClientMode) {
@@ -1426,7 +1440,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <span className="text-[#00F59B] font-bold">{client.username || client.email.split('@')[0]}</span>
                         <span className="text-slate-600">·</span>
                         <span className="text-slate-400">Senha:</span>
-                        <span className="text-amber-300 font-bold">{client.password || 'zuxo2026pass'}</span>
+                        <span className="text-amber-300 font-bold">{client.password || '—'}</span>
                       </div>
                     </div>
                   </div>
@@ -1767,7 +1781,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           ? cName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '_')
                           : (cEmail.split('@')[0] || `user_${Math.floor(1000 + Math.random() * 9000)}`);
                         setCUsername(cleanBase);
-                        setCPassword(`zuxo${Math.floor(1000 + Math.random() * 9000)}pass`);
+                        setCPassword(generatePassword());
                         setCProvider('http://dns.zuxoplayer.live:8080');
                         showNotification('Credenciais geradas automaticamente!');
                       }}
@@ -1827,7 +1841,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <input
                         type="text"
                         required
-                        placeholder="Ex: zuxo2026pass"
+                        placeholder="Gerada automaticamente"
                         value={cPassword}
                         onChange={(e) => setCPassword(e.target.value)}
                         className="w-full bg-[#0a1e16] border border-emerald-900/60 rounded-xl px-3 py-2 text-white font-mono text-xs font-bold outline-none focus:border-[#00F59B]"
@@ -3611,15 +3625,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
                       {/* Actions */}
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <a
-                          href={`/api/whatsapp/alerts/${alert.id}/image`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openWaReceipt(alert.id)}
                           className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800/60 border border-slate-700/40 text-slate-300 hover:text-white text-xs font-bold transition-all"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           Ver
-                        </a>
+                        </button>
                         <button
                           onClick={() => dismissWaAlert(alert.id)}
                           disabled={waDismissing.has(alert.id)}

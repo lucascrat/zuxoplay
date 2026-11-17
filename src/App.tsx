@@ -28,8 +28,6 @@ import {
   seedInitialFirestoreData,
   subscribeClients,
   saveClientToFirestore,
-  getClientBySlug,
-  getClientByEmail,
   subscribeClientById,
   deleteClientFromFirestore,
   subscribeTrailers,
@@ -59,6 +57,8 @@ import { PushNotificationToast } from './components/PushNotificationToast';
 import { InstallPwaPrompt } from './components/InstallPwaPrompt';
 import { buildClientInvoices } from './utils/billing';
 import { CLIENT_SITE_URL, slugFromPath } from './utils/clientLink';
+import { getAdminToken, clearAdminToken } from './utils/adminSession';
+import { fetchClientByLink, ClientAuthError } from './services/clientAuthService';
 import { TrailerItem, ClientApp, ProgramItem, ViewScreen, UserProfile, PushNotification, Invoice, SystemLog } from './types';
 import { soundEffects } from './utils/audio';
 import { INITIAL_SYSTEM_LOGS } from './data/appData';
@@ -144,14 +144,8 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
 
-  // ADMIN AUTHENTICATION STATE (Protected by password 01Deus02@@@@)
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem('zuxo_admin_auth') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  // ADMIN AUTHENTICATION STATE: signed in only while a valid server-issued token exists in this tab
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => !!getAdminToken());
   const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState<boolean>(false);
 
   // TRAILERS STATE (with localStorage)
@@ -310,6 +304,13 @@ export default function App() {
     };
   }, []);
 
+  // The server rejected the admin session (expired or invalid): lock the panel again.
+  useEffect(() => {
+    const lock = () => setIsAdminAuthenticated(false);
+    window.addEventListener('zuxo-admin-expired', lock);
+    return () => window.removeEventListener('zuxo-admin-expired', lock);
+  }, []);
+
   // Client site: keep the signed-in client up to date from their own record (new due date, link, access data).
   useEffect(() => {
     if (IS_ADMIN_HOST || !currentUser?.id) return;
@@ -323,19 +324,19 @@ export default function App() {
     if (!LINK_SLUG) return;
     let cancelled = false;
     setLinkState('loading');
-    getClientBySlug(LINK_SLUG)
+    fetchClientByLink(LINK_SLUG)
       .then((client) => {
         if (cancelled) return;
-        if (client) {
-          setCurrentUser(client);
-          setLinkState('idle');
-        } else {
-          setLinkState('missing');
-        }
+        setCurrentUser(client);
+        setLinkState('idle');
       })
-      .catch(() => {
+      .catch((err: ClientAuthError) => {
         if (cancelled) return;
-        // Offline or Firestore unavailable: fall back to the copy of the client saved on this device.
+        if (err.status === 404) {
+          setLinkState('missing');
+          return;
+        }
+        // Offline or server unavailable: fall back to the copy of the client saved on this device.
         let cached: UserProfile | undefined;
         try {
           const saved = JSON.parse(localStorage.getItem('zuxo_current_user') || 'null') as UserProfile | null;
@@ -398,21 +399,9 @@ export default function App() {
     setIsAuthModalOpen(true);
   };
 
-  const handleSuccessAuth = (user: UserProfile, isNew: boolean) => {
-    if (!isNew) {
-      setCurrentUser(user);
-    } else {
-      const newClientWithApps: UserProfile = {
-        ...user,
-        customApps: user.customApps && user.customApps.length > 0 ? user.customApps : apps,
-        screens: user.screens || 1,
-        customPrice: user.customPrice || 35.00,
-      };
-      if (IS_ADMIN_HOST) setClients([newClientWithApps, ...clients]);
-      setCurrentUser(newClientWithApps);
-      saveClientToFirestore(newClientWithApps).catch(console.error);
-    }
-
+  // The server already checked the password (or created the account); here the client just becomes the signed-in one.
+  const handleSuccessAuth = (user: UserProfile) => {
+    setCurrentUser(user);
     setIsAuthModalOpen(false);
     setActiveScreen('customer-portal');
   };
@@ -468,7 +457,7 @@ export default function App() {
     }
   };
 
-  // ADMIN PANEL ACCESS (Password Protected: 01Deus02@@@@)
+  // ADMIN PANEL ACCESS (password checked by the server)
   const handleAccessAdminPanel = () => {
     if (!IS_ADMIN_HOST) return;
     soundEffects.playClick();
@@ -481,9 +470,6 @@ export default function App() {
 
   const handleAdminAuthSuccess = () => {
     setIsAdminAuthenticated(true);
-    try {
-      sessionStorage.setItem('zuxo_admin_auth', 'true');
-    } catch {}
     setIsAdminAuthModalOpen(false);
     setActiveScreen('admin-panel');
   };
@@ -491,9 +477,7 @@ export default function App() {
   const handleLockAdmin = () => {
     soundEffects.playClick();
     setIsAdminAuthenticated(false);
-    try {
-      sessionStorage.removeItem('zuxo_admin_auth');
-    } catch {}
+    clearAdminToken();
     setActiveScreen('trailer-feed');
   };
 
@@ -938,12 +922,11 @@ export default function App() {
       <AuthScreen
         isOpen={isAuthModalOpen}
         initialMode={authModalMode}
-        onLookupClient={getClientByEmail}
         onClose={() => setIsAuthModalOpen(false)}
         onSuccessAuth={handleSuccessAuth}
       />
 
-      {/* ADMIN AUTH MODAL (PROTEÇÃO COM SENHA 01Deus02@@@@) */}
+      {/* ADMIN AUTH MODAL (a senha é conferida no servidor) */}
       <AdminAuthModal
         isOpen={isAdminAuthModalOpen}
         onClose={() => setIsAdminAuthModalOpen(false)}

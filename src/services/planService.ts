@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { PaymentPlan } from '../types';
 import { INITIAL_PAYMENT_PLANS } from '../data/appData';
+import { adminFetch } from '../utils/adminSession';
 
 export type PlanInput = Omit<PaymentPlan, 'id' | 'updatedAt'>;
 
@@ -17,7 +18,9 @@ export function screensLabel(screens: number) {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  // Management routes (/api/admin/...) need the admin session; /api/plans is public.
+  const send = url.startsWith('/api/admin/') ? adminFetch : fetch;
+  const res = await send(url, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
   });

@@ -1,4 +1,5 @@
 import { generatePixPayload, generateDynamicQrCodeDataUrl } from '../utils/pixHelpers';
+import { adminFetch } from '../utils/adminSession';
 
 export const EFIBANK_OFFICIAL_PIX_KEY = 'fab4cde3-4367-4d0b-aa9b-4528dc04d371';
 export const EFIBANK_CLIENT_ID = 'Client_Id_62a2fe6ca801b2a8c7c688c6d1cc425aca747df4';
@@ -179,7 +180,7 @@ export async function getRecentEfiPayments(): Promise<{
   all: any[];
 }> {
   try {
-    const res = await fetch('/api/pix/recent-payments');
+    const res = await adminFetch('/api/pix/recent-payments');
     if (res.ok) {
       return await res.json();
     }
