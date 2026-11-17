@@ -337,7 +337,6 @@ export const INITIAL_CLIENTS: UserProfile[] = [
     status: 'ativo',
     provider: 'http://dns.zuxoplayer.live:8080',
     username: 'lucas_sousa',
-    password: 'zuxo2026pass',
     notes: 'Conta Principal Master. Acesso oficial multitelas liberado.',
     createdAt: '2026-01-10',
     customApps: [
@@ -414,7 +413,6 @@ export const INITIAL_CLIENTS: UserProfile[] = [
     status: 'ativo',
     provider: 'http://dns.zuxoplayer.live:8080',
     username: 'mariana_silva',
-    password: 'mariana2026pass',
     notes: 'Liberado 3 telas para FireStick da sala e quartos.',
     createdAt: '2026-02-15',
     customApps: [
@@ -455,7 +453,6 @@ export const INITIAL_CLIENTS: UserProfile[] = [
     status: 'ativo',
     provider: 'http://dns.zuxoplayer.live:8080',
     username: 'carlos_mendes',
-    password: 'carlos2026pass',
     notes: 'Utiliza Smart TV na sala. Vencimento próximo em 25/10.',
     createdAt: '2026-03-01',
     customApps: [
@@ -485,7 +482,6 @@ export const INITIAL_CLIENTS: UserProfile[] = [
     status: 'pendente',
     provider: 'http://dns.zuxoplayer.live:8080',
     username: 'juliana_costa',
-    password: 'juliana2026pass',
     notes: 'Aguardando pagamento da fatura de renovação via PIX.',
     createdAt: '2026-01-20',
     customApps: [
@@ -516,7 +512,6 @@ export const INITIAL_CLIENTS: UserProfile[] = [
     status: 'ativo',
     provider: 'http://dns.zuxoplayer.live:8080',
     username: 'rodrigo_rocha',
-    password: 'rodrigo2026pass',
     notes: 'Renovação todo dia 30.',
     createdAt: '2026-02-01',
     customApps: [
@@ -547,7 +542,6 @@ export const INITIAL_CLIENTS: UserProfile[] = [
     status: 'ativo',
     provider: 'http://dns.zuxoplayer.live:8080',
     username: 'amanda_ribeiro',
-    password: 'amanda2026pass',
     notes: 'Utiliza Apple TV e iPhones da família.',
     createdAt: '2026-02-20',
     customApps: [
