@@ -119,7 +119,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-lg font-black text-white font-display">
-                  Central de Notificações Push
+                  Notificações
                 </h3>
                 {unreadCount > 0 && (
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-[#00F59B] text-slate-950 shadow-sm">
@@ -128,7 +128,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                 )}
               </div>
               <p className="text-xs text-slate-400">
-                Alertas automáticos de faturas e vencimentos via Firebase Cloud Messaging (FCM)
+                Avisos de faturas e vencimentos da sua conta
               </p>
             </div>
           </div>
@@ -142,47 +142,6 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           >
             <X className="w-5 h-5" />
           </button>
-        </div>
-
-        {/* FCM STATUS BANNER */}
-        <div className="mt-4 p-3.5 rounded-2xl bg-[#04110c] border border-emerald-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className={`w-3 h-3 rounded-full animate-ping ${
-              pushStatus === 'granted' ? 'bg-[#00F59B]' : 'bg-amber-400'
-            }`} />
-            <div>
-              <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                <Radio className="w-3.5 h-3.5 text-[#00F59B]" />
-                FCM Push: {pushStatus === 'granted' ? 'Ativado neste Navegador' : 'Aguardando Permissão'}
-              </p>
-              <p className="text-[11px] text-slate-400">
-                {pushStatus === 'granted' 
-                  ? 'Você recebe alertas mesmo com o app minimizado.'
-                  : 'Autorize para receber lembretes de fatura e renovação.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {pushStatus !== 'granted' ? (
-              <button
-                onClick={handleEnablePush}
-                disabled={isRequestingPermission}
-                className="w-full sm:w-auto px-3.5 py-1.5 bg-[#00F59B] hover:bg-[#10e58f] text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                {isRequestingPermission ? 'Ativando...' : 'Ativar Push FCM'}
-              </button>
-            ) : (
-              <button
-                onClick={handleTestNotification}
-                className="w-full sm:w-auto px-3 py-1.5 bg-[#0a2217] hover:bg-[#0f2e20] border border-emerald-600/50 text-[#00F59B] font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all"
-              >
-                <Smartphone className="w-3.5 h-3.5" />
-                Testar Alerta
-              </button>
-            )}
-          </div>
         </div>
 
         {/* FILTERS */}
@@ -360,21 +319,6 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           )}
         </div>
 
-        {/* FOOTER INFO */}
-        {fcmToken && (
-          <div className="mt-3 pt-3 border-t border-emerald-950/80 flex items-center justify-between text-[11px] text-slate-400">
-            <span className="font-mono truncate max-w-[280px]">
-              FCM Token: {fcmToken.slice(0, 24)}...
-            </span>
-            <button
-              onClick={handleCopyToken}
-              className="text-emerald-400 hover:text-white flex items-center gap-1 font-semibold"
-            >
-              <Copy className="w-3 h-3" />
-              {copiedToken ? 'Copiado!' : 'Copiar Token'}
-            </button>
-          </div>
-        )}
 
       </div>
     </div>
