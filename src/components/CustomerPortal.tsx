@@ -24,7 +24,6 @@ import {
   LogOut,
   Edit2,
   Bell,
-  Radio,
   AlertTriangle,
   AlertCircle,
   Zap,
@@ -43,7 +42,6 @@ import { ClientApp, PaymentPlan, Invoice, ProgramItem, UserProfile, PushNotifica
 import { soundEffects } from '../utils/audio';
 import { NotificationCenterModal } from './NotificationCenterModal';
 import { SubscriptionCycleTimeline } from './SubscriptionCycleTimeline';
-import { requestPushPermissionAndGetToken, getNotificationPermissionStatus, displaySystemPushNotification } from '../services/fcmService';
 import { calculateDaysRemaining } from '../services/notificationService';
 import { DEFAULT_PIX_KEYS, generatePixPayload, generateDynamicQrCodeDataUrl, PixKeyOption } from '../utils/pixHelpers';
 import { 
@@ -65,7 +63,6 @@ interface CustomerPortalProps {
   onLogout: () => void;
   onBackToFeed: () => void;
   onOpenDailyGuide: () => void;
-  onOpenAdminPanel: () => void;
   onMarkNotificationAsRead?: (id: string) => void;
   onDeleteNotification?: (id: string) => void;
 }
@@ -81,14 +78,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   onLogout,
   onBackToFeed,
   onOpenDailyGuide,
-  onOpenAdminPanel,
   onMarkNotificationAsRead = () => {},
   onDeleteNotification = () => {},
 }) => {
-  const [activeTab, setActiveTab] = useState<'apps' | 'plans' | 'payments' | 'cycle' | 'schedule' | 'credentials' | 'notifications'>('apps');
+  const [activeTab, setActiveTab] = useState<'apps' | 'plans' | 'payments' | 'cycle' | 'schedule' | 'notifications'>('apps');
   const [isNotificationModalOpen, setIsNotificationModalOpen] = useState<boolean>(false);
-  const [pushPermissionStatus, setPushPermissionStatus] = useState<string>(() => getNotificationPermissionStatus());
-  const [isRequestingPush, setIsRequestingPush] = useState<boolean>(false);
   
   // INVOICES & PAYMENTS STATE
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
@@ -157,6 +151,14 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
   // Use individual customized apps if configured by admin, otherwise general apps
   const clientApps = (currentUser.customApps && currentUser.customApps.length > 0) ? currentUser.customApps : apps;
+
+  // Access data registered by the admin for this client; falls back to the first app that carries credentials.
+  const appWithCreds = (currentUser.customApps || []).find((a) => a.credProvedor || a.credUsuario || a.credSenha);
+  const accessFields = [
+    { id: 'access-provider', label: 'Provedor ou URL', value: currentUser.provider || appWithCreds?.credProvedor || '', secret: false },
+    { id: 'access-username', label: 'Usuário', value: currentUser.username || appWithCreds?.credUsuario || '', secret: false },
+    { id: 'access-password', label: 'Senha', value: currentUser.password || appWithCreds?.credSenha || '', secret: true },
+  ].filter((field) => field.value);
   
   // Determine current payment amount:
   // 1. If paying a specific pending invoice -> that invoice's amount
@@ -231,22 +233,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     (n) => n.clientId === 'all' || n.clientId === currentUser.id
   );
   const unreadCount = userNotifications.filter((n) => !n.read).length;
-
-  const handleEnablePushNotifications = async () => {
-    soundEffects.playSelect();
-    setIsRequestingPush(true);
-    const res = await requestPushPermissionAndGetToken(currentUser.id);
-    setIsRequestingPush(false);
-    if (res.granted && res.token) {
-      setPushPermissionStatus('granted');
-      displaySystemPushNotification(
-        '🔔 Notificações Ativadas com Sucesso!',
-        'Você agora receberá alertas instantâneos de novas faturas e vencimentos do Zuxo Player.'
-      );
-    } else {
-      setPushPermissionStatus(getNotificationPermissionStatus());
-    }
-  };
 
   const handleCopy = (text: string, label: string) => {
     soundEffects.playClick();
@@ -445,10 +431,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                 setIsNotificationModalOpen(true);
               }}
               className="relative px-3.5 py-1.5 bg-[#0a2016] hover:bg-[#0e2d20] border border-emerald-600/40 text-emerald-300 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-colors"
-              title="Central de Notificações Push FCM"
+              title="Notificações"
             >
               <Bell className="w-4 h-4 text-[#00F59B]" />
-              <span className="hidden sm:inline">Alertas FCM</span>
+              <span className="hidden sm:inline">Avisos</span>
               {unreadCount > 0 && (
                 <span className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-[#00F59B] text-slate-950 animate-pulse">
                   {unreadCount}
@@ -465,17 +451,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             >
               <Calendar className="w-4 h-4 text-[#00F59B]" />
               Grade de Hoje
-            </button>
-
-            <button
-              onClick={() => {
-                soundEffects.playClick();
-                onOpenAdminPanel();
-              }}
-              className="px-3.5 py-1.5 bg-[#0a2016] hover:bg-[#0e2d20] border border-emerald-900 text-slate-300 hover:text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors"
-            >
-              <Layers className="w-4 h-4 text-emerald-400" />
-              Painel Admin
             </button>
 
             <button
@@ -624,56 +599,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
           </div>
         )}
 
-        {/* PUSH NOTIFICATIONS & EXPIRATION INTERACTIVE ALERT BANNER */}
-        <div className="p-4 rounded-2xl bg-gradient-to-r from-[#062116] via-[#04160e] to-[#030d08] border border-emerald-600/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-[#00F59B]/15 text-[#00F59B] border border-[#00F59B]/30 flex-shrink-0">
-              <Radio className="w-5 h-5 animate-pulse" />
-            </div>
-            <div>
-              <p className="text-xs font-bold text-white flex items-center gap-2">
-                <span>Alertas Push Firebase (FCM):</span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                  pushPermissionStatus === 'granted'
-                    ? 'bg-emerald-950 text-[#00F59B] border border-emerald-800'
-                    : 'bg-amber-950 text-amber-300 border border-amber-800'
-                }`}>
-                  {pushPermissionStatus === 'granted' ? 'Ativo no Navegador' : 'Não Habilitado'}
-                </span>
-              </p>
-              <p className="text-[11px] text-slate-300 mt-0.5">
-                {pendingInvoices.length > 0
-                  ? `Você possui fatura pendente de R$ ${pendingInvoices[0].amount.toFixed(2).replace('.', ',')}. Pague via PIX para manter o sinal ativo.`
-                  : `Receba avisos automáticos de vencimento (${currentUser.expirationDate}) e novas faturas diretamente na tela do seu aparelho.`}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {pushPermissionStatus !== 'granted' && (
-              <button
-                onClick={handleEnablePushNotifications}
-                disabled={isRequestingPush}
-                className="w-full sm:w-auto px-3.5 py-1.5 bg-[#00F59B] hover:bg-[#10e58f] text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95 whitespace-nowrap"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                {isRequestingPush ? 'Ativando...' : 'Ativar Push FCM'}
-              </button>
-            )}
-
-            <button
-              onClick={() => {
-                soundEffects.playClick();
-                setIsNotificationModalOpen(true);
-              }}
-              className="w-full sm:w-auto px-3 py-1.5 bg-[#0a2016] hover:bg-[#0e2d20] border border-emerald-700/60 text-[#00F59B] text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-all whitespace-nowrap"
-            >
-              <Bell className="w-3.5 h-3.5" />
-              Ver Notificações ({userNotifications.length})
-            </button>
-          </div>
-        </div>
-
         {/* TABS NAVIGATION */}
         <div className="flex gap-2 border-b border-emerald-950 pb-2 overflow-x-auto no-scrollbar">
           <button
@@ -688,7 +613,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             }`}
           >
             <Smartphone className="w-4 h-4" />
-            Meus Apps Disponíveis ({clientApps.length})
+            Meu Acesso e Apps
           </button>
 
           <button
@@ -760,7 +685,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             className="py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap text-slate-400 hover:text-white bg-[#0a1e16]"
           >
             <Bell className="w-4 h-4 text-[#00F59B]" />
-            Notificações FCM ({userNotifications.length})
+            Notificações ({userNotifications.length})
           </button>
 
           <button
@@ -778,20 +703,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             Grade de Hoje
           </button>
 
-          <button
-            onClick={() => {
-              soundEffects.playClick();
-              setActiveTab('credentials');
-            }}
-            className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
-              activeTab === 'credentials'
-                ? 'bg-[#00F59B] text-slate-950 shadow-md'
-                : 'text-slate-400 hover:text-white bg-[#0a1e16]'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            Minhas Credenciais
-          </button>
         </div>
 
         {/* TAB: PLANOS — o cliente escolhe telas e duração */}
@@ -915,6 +826,59 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
         {/* TAB 1: MEUS APLICATIVOS DISPONÍVEIS */}
         {activeTab === 'apps' && (
           <div className="space-y-4">
+            {/* DADOS DE ACESSO — definidos pelo administrador no cadastro do cliente */}
+            <section className="bg-gradient-to-br from-[#0d2e23] to-[#06160f] border border-emerald-500/40 rounded-3xl p-5 sm:p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-[#00F59B]/15 border border-[#00F59B]/30 flex items-center justify-center text-[#00F59B] shrink-0">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white font-display leading-tight">Acesso ao seu app Zuxo</h3>
+                  <p className="text-xs text-slate-400">Digite estes dados no aplicativo para entrar.</p>
+                </div>
+              </div>
+
+              {accessFields.length === 0 ? (
+                <p className="text-sm text-slate-300 bg-[#05130d] border border-emerald-950 rounded-2xl p-4">
+                  Seus dados de acesso ainda não foram liberados. Fale com o suporte pelo WhatsApp.
+                </p>
+              ) : (
+                <dl className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {accessFields.map((field) => {
+                    const hidden = field.secret && !visiblePasswords.has('main-access');
+                    return (
+                      <div key={field.id} className="bg-[#05130d] border border-emerald-950 rounded-2xl p-3.5 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">{field.label}</dt>
+                          <dd className="mt-0.5 font-mono text-sm font-semibold text-white break-all">
+                            {hidden ? '●'.repeat(Math.min(field.value.length, 12)) : field.value}
+                          </dd>
+                        </div>
+                        <div className="flex items-center shrink-0">
+                          {field.secret && (
+                            <button
+                              onClick={() => togglePasswordVisibility('main-access')}
+                              className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-white rounded-lg"
+                              aria-label={hidden ? 'Mostrar senha' : 'Ocultar senha'}
+                            >
+                              {hidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleCopy(field.value, field.id)}
+                            className="w-10 h-10 flex items-center justify-center text-emerald-400 hover:text-white rounded-lg"
+                            aria-label={`Copiar ${field.label}`}
+                          >
+                            {copiedText === field.id ? <Check className="w-4 h-4 text-[#00F59B]" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </dl>
+              )}
+            </section>
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <h3 className="text-lg font-bold text-white font-display">
@@ -1805,76 +1769,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   )}
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: MINHAS CREDENCIAIS */}
-        {activeTab === 'credentials' && (
-          <div className="bg-[#0a1e16] border border-emerald-900/60 rounded-3xl p-6 space-y-4">
-            <h3 className="text-lg font-bold text-white font-display">
-              Credenciais de Conexão IPTV (Xtream Codes & M3U)
-            </h3>
-            <p className="text-xs text-slate-400">
-              Utilize esses dados caso queira configurar seu acesso em outros reprodutores como Smarters Pro, Tivimate ou IBO Player.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div className="bg-[#05130d] p-3.5 rounded-2xl border border-emerald-950 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-bold">DNS / SERVIDOR:</span>
-                  <span className="font-mono text-xs font-semibold text-white">http://dns.zuxoplayer.live:8080</span>
-                </div>
-                <button
-                  onClick={() => handleCopy('http://dns.zuxoplayer.live:8080', 'c-dns')}
-                  className="p-1.5 text-emerald-400 hover:text-white"
-                >
-                  {copiedText === 'c-dns' ? <Check className="w-4 h-4 text-[#00F59B]" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-
-              <div className="bg-[#05130d] p-3.5 rounded-2xl border border-emerald-950 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-bold">USUÁRIO XTREAM:</span>
-                  <span className="font-mono text-xs font-bold text-[#00F59B]">
-                    {currentUser.email.split('@')[0]}
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleCopy(currentUser.email.split('@')[0], 'c-user')}
-                  className="p-1.5 text-emerald-400 hover:text-white"
-                >
-                  {copiedText === 'c-user' ? <Check className="w-4 h-4 text-[#00F59B]" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-
-              <div className="bg-[#05130d] p-3.5 rounded-2xl border border-emerald-950 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-bold">SENHA:</span>
-                  <span className="font-mono text-xs font-semibold text-white">zuxo8849pass</span>
-                </div>
-                <button
-                  onClick={() => handleCopy('zuxo8849pass', 'c-pass')}
-                  className="p-1.5 text-emerald-400 hover:text-white"
-                >
-                  {copiedText === 'c-pass' ? <Check className="w-4 h-4 text-[#00F59B]" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
-
-              <div className="bg-[#05130d] p-3.5 rounded-2xl border border-emerald-950 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-bold">LINK M3U COMPLETO:</span>
-                  <span className="font-mono text-xs text-slate-300 truncate max-w-[200px] block">
-                    http://dns.zuxoplayer.live:8080/get.php?username={currentUser.email.split('@')[0]}...
-                  </span>
-                </div>
-                <button
-                  onClick={() => handleCopy(`http://dns.zuxoplayer.live:8080/get.php?username=${currentUser.email.split('@')[0]}&password=zuxo8849pass&type=m3u_plus&output=ts`, 'c-m3u')}
-                  className="p-1.5 text-emerald-400 hover:text-white"
-                >
-                  {copiedText === 'c-m3u' ? <Check className="w-4 h-4 text-[#00F59B]" /> : <Copy className="w-4 h-4" />}
-                </button>
-              </div>
             </div>
           </div>
         )}
