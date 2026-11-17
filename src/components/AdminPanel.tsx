@@ -67,7 +67,7 @@ import {
 import { INITIAL_SYSTEM_LOGS } from '../data/appData';
 import { displaySystemPushNotification } from '../services/fcmService';
 import { PaymentsByMonthTab } from './PaymentsByMonthTab';
-import { clientLinkUrl, isSlugTaken, suggestSlug, validateSlug, normalizeSlug } from '../utils/clientLink';
+import { CLIENT_SITE_HOST, clientLinkUrl, isSlugTaken, suggestSlug, validateSlug, normalizeSlug } from '../utils/clientLink';
 import { getEfiGatewayConfig, EfiGatewayConfig, EFIBANK_OFFICIAL_PIX_KEY } from '../services/efiBankService';
 
 interface AdminPanelProps {
@@ -1639,7 +1639,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <div className="flex flex-1 min-w-0 items-stretch rounded-xl overflow-hidden border border-emerald-900/60 focus-within:border-[#00F59B]">
-                      <span className="px-3 flex items-center bg-[#071710] text-slate-400 text-xs font-mono whitespace-nowrap">zuxoplay.appbr.pro/</span>
+                      <span className="px-3 flex items-center bg-[#071710] text-slate-400 text-xs font-mono whitespace-nowrap">{CLIENT_SITE_HOST}/</span>
                       <input
                         id="client-slug"
                         type="text"

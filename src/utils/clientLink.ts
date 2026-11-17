@@ -1,7 +1,9 @@
 import { UserProfile } from '../types';
 
 /** Public address of the client site. The admin panel lives on another host, so links never use window.location. */
-export const CLIENT_SITE_URL = 'https://zuxoplay.appbr.pro';
+export const CLIENT_SITE_URL = 'https://zuxoplayer.online';
+/** Same address without the protocol, for display ("zuxoplayer.online"). */
+export const CLIENT_SITE_HOST = CLIENT_SITE_URL.replace(/^https?:\/\//, '');
 
 // Words that are already used by the app, the server or the browser and cannot be a client link.
 const RESERVED_SLUGS = new Set([
