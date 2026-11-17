@@ -58,7 +58,6 @@ interface CustomerPortalProps {
   programs: ProgramItem[];
   notifications?: PushNotification[];
   onUpdateUser: (updatedUser: UserProfile) => void;
-  onUpdateInvoices?: (updatedInvoices: Invoice[]) => void;
   onLogout: () => void;
   onBackToFeed: () => void;
   onOpenDailyGuide: () => void;
@@ -73,7 +72,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   programs,
   notifications = [],
   onUpdateUser,
-  onUpdateInvoices,
   onLogout,
   onBackToFeed,
   onOpenDailyGuide,
@@ -217,7 +215,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
       try {
         const res = await checkEfiPixStatus(efiTxid);
         if (res.paid) {
-          completePaymentSuccess('PIX Efí Bank (Confirmação Automática)');
+          completePaymentSuccess('PIX Efí Bank', res.applied);
         }
       } catch {
         // silent retry
@@ -265,66 +263,42 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     }
   };
 
-  const completePaymentSuccess = (providerLabel = 'PIX Efí Bank') => {
+  // serverApplied: the server already wrote the new due date and the payment to the client's record,
+  // so the screen only celebrates. The browser writes them itself only as a fallback.
+  const completePaymentSuccess = (providerLabel = 'PIX Efí Bank', serverApplied = false) => {
     setPaymentSuccess(true);
-    
-    // Nova data de vencimento: plano escolhido soma os meses dele; renovação/fatura soma 30 dias.
-    // Conta a partir do vencimento atual se ainda não venceu, para o cliente não perder dias.
-    const [curD, curM, curY] = (currentUser.expirationDate || '').split('/').map(Number);
-    const currentExp = curD && curM && curY ? new Date(curY, curM - 1, curD) : null;
-    const start = currentExp && currentExp.getTime() > Date.now() ? currentExp : new Date();
-    const next = new Date(start);
-    if (planBeingPaid) next.setMonth(next.getMonth() + planBeingPaid.months);
-    else next.setDate(next.getDate() + 30);
-    const day = String(next.getDate()).padStart(2, '0');
-    const month = String(next.getMonth() + 1).padStart(2, '0');
-    const year = next.getFullYear();
-    const newExpDate = `${day}/${month}/${year}`;
 
-    // Update User profile (plano comprado também define as telas liberadas)
-    onUpdateUser({
-      ...currentUser,
-      expirationDate: newExpDate,
-      status: 'ativo',
-      ...(planBeingPaid ? { screens: planBeingPaid.screens, plan: planBeingPaid.name } : {}),
-    });
+    const paidInvoice: Invoice = {
+      id: efiTxid || `inv-${Date.now()}`,
+      description: planBeingPaid
+        ? `Plano ${planBeingPaid.name}`
+        : `Renovação da assinatura (${currentUser.screens} ${currentUser.screens === 1 ? 'tela' : 'telas'})`,
+      date: new Date().toLocaleDateString('pt-BR'),
+      amount: activePaymentAmount,
+      status: 'pago',
+      paymentMethod: providerLabel,
+      clientId: currentUser.id,
+    };
+    setLastPaidInvoice(paidInvoice);
+    setSelectedInvoiceToPay(null);
 
-    let updatedList: Invoice[] = [];
+    if (!serverApplied) {
+      // Plano escolhido soma os meses dele; renovação soma 30 dias, a partir do vencimento atual se ainda não venceu.
+      const [curD, curM, curY] = (currentUser.expirationDate || '').split('/').map(Number);
+      const currentExp = curD && curM && curY ? new Date(curY, curM - 1, curD) : null;
+      const start = currentExp && currentExp.getTime() > Date.now() ? currentExp : new Date();
+      const next = new Date(start);
+      if (planBeingPaid) next.setMonth(next.getMonth() + planBeingPaid.months);
+      else next.setDate(next.getDate() + 30);
+      const newExpDate = `${String(next.getDate()).padStart(2, '0')}/${String(next.getMonth() + 1).padStart(2, '0')}/${next.getFullYear()}`;
 
-    if (selectedInvoiceToPay) {
-      // Quitar fatura pendente existente
-      const paidInv: Invoice = {
-        ...selectedInvoiceToPay,
-        status: 'pago',
-        paymentMethod: providerLabel,
-        date: new Date().toLocaleDateString('pt-BR'),
-        pixKey: selectedPixKey.key,
-      };
-      updatedList = invoices.map((inv) => (inv.id === selectedInvoiceToPay.id ? paidInv : inv));
-      setLastPaidInvoice(paidInv);
-      setSelectedInvoiceToPay(null);
-    } else {
-      // Nova fatura gerada e paga
-      const newInvoice: Invoice = {
-        id: `inv-${Date.now()}`,
-        description: planBeingPaid
-          ? `Plano ${planBeingPaid.name}`
-          : `Renovação de Assinatura (${currentUser.screens} ${currentUser.screens === 1 ? 'Tela' : 'Telas'})`,
-        date: new Date().toLocaleDateString('pt-BR'),
-        dueDate: newExpDate,
-        amount: activePaymentAmount,
-        status: 'pago',
-        paymentMethod: providerLabel,
-        pixKey: selectedPixKey.key,
-        clientId: currentUser.id,
-      };
-      updatedList = [newInvoice, ...invoices];
-      setLastPaidInvoice(newInvoice);
-    }
-
-    setInvoices(updatedList);
-    if (onUpdateInvoices) {
-      onUpdateInvoices(updatedList);
+      onUpdateUser({
+        ...currentUser,
+        expirationDate: newExpDate,
+        status: 'ativo',
+        ...(planBeingPaid ? { screens: planBeingPaid.screens, plan: planBeingPaid.name } : {}),
+        payments: [{ ...paidInvoice, dueDate: newExpDate }, ...(currentUser.payments || [])],
+      });
     }
 
     confetti({
@@ -344,7 +318,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     try {
       const res = await checkEfiPixStatus(efiTxid);
       if (res.paid) {
-        completePaymentSuccess('PIX Efí Bank');
+        completePaymentSuccess('PIX Efí Bank', res.applied);
       } else {
         setEfiFeedback('Ainda não identificamos o seu pagamento. Ele costuma aparecer em poucos segundos — esta tela atualiza sozinha. Se já pagou e não liberou, fale com o suporte.');
         setTimeout(() => setEfiFeedback(''), 9000);
