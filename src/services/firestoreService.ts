@@ -112,6 +112,28 @@ export function subscribeClients(
   );
 }
 
+// Finds a client by e-mail for sign-in. Server only, so an offline cache never decides who exists.
+export async function getClientByEmail(email: string): Promise<UserProfile | null> {
+  const typed = email.trim();
+  for (const candidate of new Set([typed, typed.toLowerCase()])) {
+    if (!candidate) continue;
+    const snap = await getDocsFromServer(query(collection(db, 'clients'), where('email', '==', candidate), limit(1)));
+    if (!snap.empty) return { ...snap.docs[0].data(), id: snap.docs[0].id } as UserProfile;
+  }
+  return null;
+}
+
+// Follows one client's own record, so the client site never needs the whole client list.
+export function subscribeClientById(id: string, onData: (client: UserProfile) => void) {
+  return onSnapshot(
+    doc(db, 'clients', id),
+    (snap) => {
+      if (snap.exists()) onData({ ...snap.data(), id: snap.id } as UserProfile);
+    },
+    (error) => console.warn('[clients] não foi possível acompanhar o cadastro:', error.message)
+  );
+}
+
 // Finds the client that owns a personal link. Throws when Firestore cannot be reached.
 export async function getClientBySlug(slug: string): Promise<UserProfile | null> {
   // From the server only: an offline, empty cache must not be read as "this link does not exist".

@@ -29,6 +29,8 @@ import {
   subscribeClients,
   saveClientToFirestore,
   getClientBySlug,
+  getClientByEmail,
+  subscribeClientById,
   deleteClientFromFirestore,
   subscribeTrailers,
   saveTrailerToFirestore,
@@ -75,6 +77,13 @@ const IS_ADMIN_HOST =
 // Personal link of a client (zuxoplayer.online/<slug>): opens that client's area with no sign-up.
 const LINK_SLUG = IS_ADMIN_HOST ? null : slugFromPath(window.location.pathname);
 
+// Earlier versions saved every client (with access data) on each visitor's device. Remove that copy.
+if (!IS_ADMIN_HOST) {
+  try {
+    localStorage.removeItem('zuxo_clients');
+  } catch {}
+}
+
 const DEEP_LINK_SCREENS: ViewScreen[] = ['trailer-feed', 'customer-portal', 'daily-guide'];
 
 function getInitialScreen(): ViewScreen {
@@ -93,7 +102,9 @@ export default function App() {
     : (requestedScreen === 'admin-panel' ? 'trailer-feed' : requestedScreen);
 
   // REGISTERED CLIENTS STATE (Managed by admin with real apps, screens, prices)
+  // Only the admin site loads the whole list. The client site holds just the signed-in client.
   const [clients, setClients] = useState<UserProfile[]>(() => {
+    if (!IS_ADMIN_HOST) return [];
     try {
       const isRealDataV2 = localStorage.getItem('zuxo_real_data_v2') === 'true';
       const saved = localStorage.getItem('zuxo_clients');
@@ -204,16 +215,18 @@ export default function App() {
     seedInitialNotifications().catch(console.warn);
 
     // 2. Real-time Firestore snapshot subscriptions
-    const unsubClients = subscribeClients((remoteClients) => {
-      if (remoteClients && remoteClients.length > 0) {
-        setClients(remoteClients);
-        setCurrentUser((prev) => {
-          if (!prev) return prev;
-          const updated = remoteClients.find((c) => c.id === prev.id);
-          return updated || prev;
-        });
-      }
-    });
+    const unsubClients = IS_ADMIN_HOST
+      ? subscribeClients((remoteClients) => {
+          if (remoteClients && remoteClients.length > 0) {
+            setClients(remoteClients);
+            setCurrentUser((prev) => {
+              if (!prev) return prev;
+              const updated = remoteClients.find((c) => c.id === prev.id);
+              return updated || prev;
+            });
+          }
+        })
+      : () => {};
 
     const unsubTrailers = subscribeTrailers((remoteTrailers) => {
       if (remoteTrailers && remoteTrailers.length > 0) {
@@ -265,9 +278,11 @@ export default function App() {
     });
 
     // 4. Automated check for invoices and upcoming expirations
+    // On the admin site this checks every client; on the client site each client's own visit checks only them.
     const autoScanTimer = setTimeout(() => {
-      if (clients.length > 0) {
-        checkAndSendAutomatedAlerts(clients, notifications, currentUser?.id).catch(console.warn);
+      const scope = IS_ADMIN_HOST ? clients : currentUser ? [currentUser] : [];
+      if (scope.length > 0) {
+        checkAndSendAutomatedAlerts(scope, notifications, currentUser?.id).catch(console.warn);
       }
     }, 2500);
 
@@ -295,6 +310,14 @@ export default function App() {
     };
   }, []);
 
+  // Client site: keep the signed-in client up to date from their own record (new due date, link, access data).
+  useEffect(() => {
+    if (IS_ADMIN_HOST || !currentUser?.id) return;
+    return subscribeClientById(currentUser.id, (remote) => {
+      setCurrentUser((prev) => (prev && prev.id === remote.id ? remote : prev));
+    });
+  }, [currentUser?.id]);
+
   // Resolve the personal link: find the client that owns it and open their area.
   useEffect(() => {
     if (!LINK_SLUG) return;
@@ -315,8 +338,8 @@ export default function App() {
         // Offline or Firestore unavailable: fall back to the copy of the client saved on this device.
         let cached: UserProfile | undefined;
         try {
-          const saved = JSON.parse(localStorage.getItem('zuxo_clients') || '[]') as UserProfile[];
-          cached = saved.find((c) => (c.slug || '').toLowerCase() === LINK_SLUG);
+          const saved = JSON.parse(localStorage.getItem('zuxo_current_user') || 'null') as UserProfile | null;
+          if (saved && (saved.slug || '').toLowerCase() === LINK_SLUG) cached = saved;
         } catch {}
         if (cached) {
           setCurrentUser(cached);
@@ -333,7 +356,7 @@ export default function App() {
   // Sync states to local backup
   useEffect(() => {
     try {
-      localStorage.setItem('zuxo_clients', JSON.stringify(clients));
+      if (IS_ADMIN_HOST) localStorage.setItem('zuxo_clients', JSON.stringify(clients));
     } catch {}
   }, [clients]);
 
@@ -375,14 +398,9 @@ export default function App() {
     setIsAuthModalOpen(true);
   };
 
-  const handleSuccessAuth = (user: UserProfile) => {
-    const existingIndex = clients.findIndex(
-      (c) => c.email.toLowerCase() === user.email.toLowerCase() || c.id === user.id
-    );
-
-    if (existingIndex >= 0) {
-      const existingClient = clients[existingIndex];
-      setCurrentUser(existingClient);
+  const handleSuccessAuth = (user: UserProfile, isNew: boolean) => {
+    if (!isNew) {
+      setCurrentUser(user);
     } else {
       const newClientWithApps: UserProfile = {
         ...user,
@@ -390,7 +408,7 @@ export default function App() {
         screens: user.screens || 1,
         customPrice: user.customPrice || 35.00,
       };
-      setClients([newClientWithApps, ...clients]);
+      if (IS_ADMIN_HOST) setClients([newClientWithApps, ...clients]);
       setCurrentUser(newClientWithApps);
       saveClientToFirestore(newClientWithApps).catch(console.error);
     }
@@ -920,7 +938,7 @@ export default function App() {
       <AuthScreen
         isOpen={isAuthModalOpen}
         initialMode={authModalMode}
-        registeredClients={clients}
+        onLookupClient={getClientByEmail}
         onClose={() => setIsAuthModalOpen(false)}
         onSuccessAuth={handleSuccessAuth}
       />
