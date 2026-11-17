@@ -65,16 +65,27 @@ const DEFAULT_USER: UserProfile = INITIAL_CLIENTS[0];
 // Bump when the built-in trailer catalog changes so browsers drop their cached copy.
 const TRAILERS_CATALOG_VERSION = '2026-11-16';
 
-const DEEP_LINK_SCREENS: ViewScreen[] = ['trailer-feed', 'customer-portal', 'daily-guide', 'admin-panel'];
+// The admin panel lives on its own address (admzuxo.appbr.pro). The client site never shows or opens it.
+const IS_ADMIN_HOST =
+  /^adm/i.test(window.location.hostname) ||
+  (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('admin'));
+const CLIENT_SITE_URL = 'https://zuxoplay.appbr.pro';
+
+const DEEP_LINK_SCREENS: ViewScreen[] = ['trailer-feed', 'customer-portal', 'daily-guide'];
 
 function getInitialScreen(): ViewScreen {
+  if (IS_ADMIN_HOST) return 'admin-panel';
   const requested = new URLSearchParams(window.location.search).get('screen') as ViewScreen | null;
   return requested && DEEP_LINK_SCREENS.includes(requested) ? requested : 'trailer-feed';
 }
 
 export default function App() {
   // Main default screen is the 9:16 mobile trailers feed
-  const [activeScreen, setActiveScreen] = useState<ViewScreen>(getInitialScreen);
+  const [requestedScreen, setActiveScreen] = useState<ViewScreen>(getInitialScreen);
+  // Admin address: only the panel and the "ver como cliente" preview. Client address: never the panel.
+  const activeScreen: ViewScreen = IS_ADMIN_HOST
+    ? (requestedScreen === 'customer-portal' ? 'customer-portal' : 'admin-panel')
+    : (requestedScreen === 'admin-panel' ? 'trailer-feed' : requestedScreen);
 
   // REGISTERED CLIENTS STATE (Managed by admin with real apps, screens, prices)
   const [clients, setClients] = useState<UserProfile[]>(() => {
@@ -416,6 +427,7 @@ export default function App() {
 
   // ADMIN PANEL ACCESS (Password Protected: 01Deus02@@@@)
   const handleAccessAdminPanel = () => {
+    if (!IS_ADMIN_HOST) return;
     soundEffects.playClick();
     if (isAdminAuthenticated) {
       setActiveScreen('admin-panel');
@@ -594,11 +606,11 @@ export default function App() {
           className="text-2xl font-black tracking-tight text-white font-display whitespace-nowrap shrink-0 flex items-center gap-1 hover:opacity-90 transition-opacity"
         >
           <span>Zux</span><span className="text-[#00F59B] glow-text">o</span>
-          <span className="text-[10px] tracking-[0.25em] uppercase text-emerald-400 font-bold ml-1 px-1.5 py-0.5 bg-emerald-950 rounded border border-emerald-800/40">PLAYER</span>
+          <span className="text-[10px] tracking-[0.25em] uppercase text-emerald-400 font-bold ml-1 px-1.5 py-0.5 bg-emerald-950 rounded border border-emerald-800/40">{IS_ADMIN_HOST ? 'ADMIN' : 'PLAYER'}</span>
         </a>
 
         {/* Zone 2: Navigation Links */}
-        <nav className="hidden lg:flex items-center gap-6 text-sm font-semibold text-slate-300">
+        <nav className={`${IS_ADMIN_HOST ? 'hidden' : 'hidden lg:flex'} items-center gap-6 text-sm font-semibold text-slate-300`}>
           <button
             onClick={() => {
               soundEffects.playClick();
@@ -634,21 +646,15 @@ export default function App() {
             <Calendar className="w-4 h-4" />
             Grade do Dia
           </button>
-
-          <button
-            onClick={handleAccessAdminPanel}
-            className={`whitespace-nowrap shrink-0 transition-colors hover:text-white flex items-center gap-1.5 ${
-              activeScreen === 'admin-panel' ? 'text-[#00F59B]' : 'text-slate-300'
-            }`}
-          >
-            <Layers className="w-4 h-4" />
-            <span>Painel Admin</span>
-            <Lock className="w-3 h-3 text-emerald-400/80 ml-0.5" />
-          </button>
         </nav>
 
         {/* Zone 3: Primary Action / User Profile Avatar button */}
-        <div className="flex items-center gap-2 shrink-0">
+        {IS_ADMIN_HOST && (
+          <span className="text-xs font-bold uppercase tracking-widest text-emerald-400 flex items-center gap-1.5 shrink-0">
+            <Lock className="w-3.5 h-3.5" /> Painel Administrativo
+          </span>
+        )}
+        <div className={`${IS_ADMIN_HOST ? 'hidden' : 'flex'} items-center gap-2 shrink-0`}>
           <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-[#05170f] border border-emerald-800/50 rounded-full text-[11px] text-emerald-400 font-medium">
             <span className="w-2 h-2 rounded-full bg-[#00F59B] animate-pulse"></span>
             <span className="hidden xl:inline">Firebase</span> Firestore Conectado
@@ -719,7 +725,6 @@ export default function App() {
               onLogout={handleLogout}
               onBackToFeed={() => setActiveScreen('trailer-feed')}
               onOpenDailyGuide={() => setActiveScreen('daily-guide')}
-              onOpenAdminPanel={handleAccessAdminPanel}
               onMarkNotificationAsRead={(id) => markNotificationAsRead(id).catch(console.warn)}
               onDeleteNotification={(id) => deleteNotification(id).catch(console.warn)}
             />
@@ -781,7 +786,7 @@ export default function App() {
               onAddProgram={handleAddProgram}
               onDeleteProgram={handleDeleteProgram}
               onResetDefaults={handleResetDefaults}
-              onBackToFeed={() => setActiveScreen('trailer-feed')}
+              onBackToFeed={() => { window.location.href = CLIENT_SITE_URL; }}
               onLockAdmin={handleLockAdmin}
               onSendNotification={sendPushNotification}
               onDeleteNotification={deleteNotification}
@@ -810,10 +815,10 @@ export default function App() {
                   Digitar Senha do Admin
                 </button>
                 <button
-                  onClick={() => setActiveScreen('trailer-feed')}
+                  onClick={() => { window.location.href = CLIENT_SITE_URL; }}
                   className="px-5 py-2.5 bg-[#0a1e16] border border-emerald-900 hover:bg-[#0e2c20] text-slate-300 font-bold rounded-xl text-xs hover:text-white transition-colors"
                 >
-                  Voltar ao Feed
+                  Ir para o site
                 </button>
               </div>
             </div>
@@ -821,13 +826,12 @@ export default function App() {
         )}
       </main>
 
-      <nav className="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-[#061610]/95 backdrop-blur-md border-t border-emerald-950/80 pb-[env(safe-area-inset-bottom)]">
-        <div className="h-16 grid grid-cols-4">
+      <nav className={IS_ADMIN_HOST ? 'hidden' : 'lg:hidden fixed inset-x-0 bottom-0 z-40 bg-[#061610]/95 backdrop-blur-md border-t border-emerald-950/80 pb-[env(safe-area-inset-bottom)]'}>
+        <div className="h-16 grid grid-cols-3">
           {[
             { screen: 'trailer-feed' as ViewScreen, label: 'Feed', icon: Flame, onClick: () => { soundEffects.playClick(); setActiveScreen('trailer-feed'); } },
             { screen: 'customer-portal' as ViewScreen, label: 'Cliente', icon: User, onClick: handleAccessCustomerPortal },
             { screen: 'daily-guide' as ViewScreen, label: 'Grade', icon: Calendar, onClick: () => { soundEffects.playClick(); setActiveScreen('daily-guide'); } },
-            { screen: 'admin-panel' as ViewScreen, label: 'Admin', icon: Layers, onClick: handleAccessAdminPanel },
           ].map(({ screen, label, icon: Icon, onClick }) => {
             const isActive = activeScreen === screen;
             return (

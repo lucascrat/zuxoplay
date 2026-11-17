@@ -20,18 +20,15 @@ import {
 // --- SEED INITIAL DATA IF COLLECTIONS ARE EMPTY ---
 export async function seedInitialFirestoreData() {
   try {
-    // 1. Clients (Ensure real clients and official apps are always up to date)
+    // 1. Clients — only create the sample clients that are missing. Existing docs are never
+    // overwritten, so access data, due dates and prices edited in the admin panel are kept.
     const clientsSnap = await getDocs(collection(db, 'clients'));
-    if (clientsSnap.empty) {
-      for (const client of INITIAL_CLIENTS) {
-        await setDoc(doc(db, 'clients', client.id), client);
-      }
-    } else {
-      // Sync real active clients with current expiration dates
-      for (const client of INITIAL_CLIENTS) {
-        await setDoc(doc(db, 'clients', client.id), client, { merge: true });
-      }
-    }
+    const existingClientIds = new Set(clientsSnap.docs.map((d) => d.id));
+    await Promise.all(
+      INITIAL_CLIENTS.filter((c) => !existingClientIds.has(c.id)).map((c) =>
+        setDoc(doc(db, 'clients', c.id), c)
+      )
+    );
 
     // System Logs
     const logsSnap = await getDocs(collection(db, 'system_logs'));
