@@ -143,33 +143,6 @@ export async function checkEfiPixStatus(txid: string): Promise<EfiPixStatusRespo
 }
 
 /**
- * Simulates payment for Sandbox / Testing environments
- */
-export async function simulateEfiPayment(txid: string): Promise<EfiPixStatusResponse> {
-  try {
-    const res = await fetch('/api/pix/simulate-pay', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ txid }),
-    });
-
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.warn('Simulate payment request failed:', err);
-  }
-
-  return {
-    txid,
-    status: 'CONCLUIDA',
-    paid: true,
-    paidAt: new Date().toISOString(),
-    message: 'Pagamento simulado com sucesso no ambiente Sandbox da Efí Bank!'
-  };
-}
-
-/**
  * Checks the latest PIX charge status for a given client ID
  */
 export async function checkLatestUserPixPayment(clientId: string): Promise<{
@@ -192,50 +165,6 @@ export async function checkLatestUserPixPayment(clientId: string): Promise<{
   }
 
   return { found: false, paid: false };
-}
-
-/**
- * Confirms a PIX payment automatically or on demand via Efí Bank gateway
- */
-export async function confirmEfiPayment(params: {
-  txid?: string;
-  clientId?: string;
-  amount?: number;
-  note?: string;
-  endToEndId?: string;
-}): Promise<{
-  success: boolean;
-  confirmed: boolean;
-  txid: string;
-  clientId?: string;
-  amount: number;
-  paidAt: string;
-  message: string;
-}> {
-  try {
-    const res = await fetch('/api/pix/confirm-payment', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.warn('Failed to call /api/pix/confirm-payment:', err);
-  }
-
-  const now = new Date().toISOString();
-  return {
-    success: true,
-    confirmed: true,
-    txid: params.txid || `ZX${Date.now()}`,
-    clientId: params.clientId || 'usr-1',
-    amount: params.amount || 35.0,
-    paidAt: now,
-    message: 'Pagamento PIX confirmado com sucesso!'
-  };
 }
 
 /**

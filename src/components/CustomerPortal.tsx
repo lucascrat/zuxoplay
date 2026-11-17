@@ -336,35 +336,21 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   };
 
   // Confirm PIX payment (quitting pending invoice or renewing)
-  const handleConfirmPixPayment = () => {
+  // The access is only released when the bank confirms the payment of this charge.
+  const handleConfirmPixPayment = async () => {
+    if (!efiTxid) return;
     soundEffects.playSelect();
     setIsProcessingPayment(true);
-
-    setTimeout(() => {
-      setIsProcessingPayment(false);
-      completePaymentSuccess('PIX Efí Bank');
-    }, 1200);
-  };
-
-  const handleCheckEfiStatus = async () => {
-    if (!efiTxid) return;
-    soundEffects.playClick();
-    setIsCheckingEfiStatus(true);
-    setEfiFeedback('Consultando API do Efí Bank em tempo real...');
-
     try {
       const res = await checkEfiPixStatus(efiTxid);
       if (res.paid) {
-        completePaymentSuccess('PIX Efí Bank (API)');
-        setEfiFeedback('Pagamento confirmado com sucesso pelo Efí Bank!');
+        completePaymentSuccess('PIX Efí Bank');
       } else {
-        setEfiFeedback(res.message || 'Aguardando compensação do PIX no Efí Bank...');
+        setEfiFeedback('Ainda não identificamos o seu pagamento. Ele costuma aparecer em poucos segundos — esta tela atualiza sozinha. Se já pagou e não liberou, fale com o suporte.');
+        setTimeout(() => setEfiFeedback(''), 9000);
       }
-    } catch {
-      setEfiFeedback('Não foi possível verificar no momento. Tente novamente em alguns segundos.');
     } finally {
-      setIsCheckingEfiStatus(false);
-      setTimeout(() => setEfiFeedback(''), 4500);
+      setIsProcessingPayment(false);
     }
   };
 
@@ -1220,51 +1206,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                 </div>
               </div>
 
-              {/* PAYMENT METHOD TOGGLE (PIX DEFAULT) */}
-              <div className="flex flex-wrap gap-2 my-6">
-                <button
-                  onClick={() => {
-                    soundEffects.playClick();
-                    setPaymentMethod('pix');
-                  }}
-                  className={`py-2 px-4 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
-                    paymentMethod === 'pix'
-                      ? 'bg-[#00F59B] text-slate-950 shadow-md'
-                      : 'bg-[#06140e] text-slate-300 hover:text-white border border-emerald-950'
-                  }`}
-                >
-                  <QrCode className="w-4 h-4" /> PIX
-                </button>
-
-                <button
-                  onClick={() => {
-                    soundEffects.playClick();
-                    setPaymentMethod('credit_card');
-                  }}
-                  className={`py-2 px-4 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
-                    paymentMethod === 'credit_card'
-                      ? 'bg-[#00F59B] text-slate-950 shadow-md'
-                      : 'bg-[#06140e] text-slate-300 hover:text-white border border-emerald-950'
-                  }`}
-                >
-                  <CreditCard className="w-4 h-4" /> Cartão de Crédito
-                </button>
-
-                <button
-                  onClick={() => {
-                    soundEffects.playClick();
-                    setPaymentMethod('boleto');
-                  }}
-                  className={`py-2 px-4 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
-                    paymentMethod === 'boleto'
-                      ? 'bg-[#00F59B] text-slate-950 shadow-md'
-                      : 'bg-[#06140e] text-slate-300 hover:text-white border border-emerald-950'
-                  }`}
-                >
-                  <Barcode className="w-4 h-4" /> Boleto Bancário
-                </button>
-              </div>
-
               {/* PIX CONTENT (QR CODE DINÂMICO & CAMPO CHAVE PIX) */}
               {paymentMethod === 'pix' && (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -1412,24 +1353,15 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       >
                         {isProcessingPayment ? (
                           <>
-                            <RefreshCw className="w-5 h-5 animate-spin" /> Verificando Quitação no Efí Bank...
+                            <RefreshCw className="w-5 h-5 animate-spin" /> Verificando pagamento...
                           </>
                         ) : (
                           <>
-                            <CheckCircle2 className="w-5 h-5" /> Já Efetuei o PIX (Confirmar e Liberar Acesso)
+                            <CheckCircle2 className="w-5 h-5" /> Já paguei — verificar pagamento
                           </>
                         )}
                       </button>
 
-                      <button
-                          type="button"
-                          onClick={handleCheckEfiStatus}
-                          disabled={isCheckingEfiStatus}
-                          className="w-full py-2.5 px-3 bg-[#0a1f16] hover:bg-[#0e2e21] border border-emerald-800 text-emerald-300 hover:text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-                        >
-                          <RefreshCw className={`w-3.5 h-3.5 ${isCheckingEfiStatus ? 'animate-spin text-[#00F59B]' : ''}`} />
-                          {isCheckingEfiStatus ? 'Consultando API...' : 'Checar Status no Efí Bank'}
-                        </button>
                     </div>
                   </div>
                 </div>
