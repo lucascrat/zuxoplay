@@ -67,12 +67,12 @@ const DEFAULT_USER: UserProfile = INITIAL_CLIENTS[0];
 // Bump when the built-in trailer catalog changes so browsers drop their cached copy.
 const TRAILERS_CATALOG_VERSION = '2026-11-16';
 
-// The admin panel lives on its own address (admzuxo.appbr.pro). The client site never shows or opens it.
+// The admin panel lives on its own address (admzuxo.zuxoplayer.online). The client site never shows or opens it.
 const IS_ADMIN_HOST =
   /^adm/i.test(window.location.hostname) ||
   (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('admin'));
 
-// Personal link of a client (zuxoplay.appbr.pro/<slug>): opens that client's area with no sign-up.
+// Personal link of a client (zuxoplayer.online/<slug>): opens that client's area with no sign-up.
 const LINK_SLUG = IS_ADMIN_HOST ? null : slugFromPath(window.location.pathname);
 
 const DEEP_LINK_SCREENS: ViewScreen[] = ['trailer-feed', 'customer-portal', 'daily-guide'];

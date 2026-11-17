@@ -74,7 +74,7 @@ export const INITIAL_APPS: ClientApp[] = [
     subtitle: 'LG (webOS), Samsung (Tizen), Roku e Google TV',
     version: 'v2.8.0',
     status: 'ativo',
-    downloadUrl: 'https://zuxoplay.appbr.pro/smarttv',
+    downloadUrl: 'https://zuxoplayer.online/smarttv',
     iconUrl: '/zuxo-logo.png',
     pairingCode: 'Código de Ativação: ZX-84920',
     instructions: [
@@ -90,7 +90,7 @@ export const INITIAL_APPS: ClientApp[] = [
     subtitle: 'Amazon Fire TV Stick 4K, Xiaomi Mi Box, Aquário TV Box',
     version: 'v3.5.4',
     status: 'ativo',
-    downloadUrl: 'https://zuxoplay.appbr.pro/downloads/zuxo-tvbox.apk',
+    downloadUrl: 'https://zuxoplayer.online/downloads/zuxo-tvbox.apk',
     iconUrl: '/zuxo-logo.png',
     pairingCode: 'Código Downloader: 84920',
     instructions: [
