@@ -47,7 +47,6 @@ import { DEFAULT_PIX_KEYS, generatePixPayload, generateDynamicQrCodeDataUrl, Pix
 import { 
   createEfiPixCharge, 
   checkEfiPixStatus, 
-  simulateEfiPayment, 
   EFIBANK_OFFICIAL_PIX_KEY 
 } from '../services/efiBankService';
 import { useActivePlans, formatBRL, planPeriodLabel, screensLabel } from '../services/planService';
@@ -365,23 +364,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
       setEfiFeedback('Não foi possível verificar no momento. Tente novamente em alguns segundos.');
     } finally {
       setIsCheckingEfiStatus(false);
-      setTimeout(() => setEfiFeedback(''), 4500);
-    }
-  };
-
-  const handleSimulateSandboxPayment = async () => {
-    soundEffects.playSelect();
-    setIsProcessingPayment(true);
-    setEfiFeedback('Simulando confirmação de pagamento no Sandbox Efí Bank...');
-
-    try {
-      if (efiTxid) {
-        await simulateEfiPayment(efiTxid);
-      }
-      completePaymentSuccess('PIX Efí Bank (Sandbox Test)');
-      setEfiFeedback('Pagamento aprovado e sinal liberado no Sandbox Efí Bank!');
-    } finally {
-      setIsProcessingPayment(false);
       setTimeout(() => setEfiFeedback(''), 4500);
     }
   };
@@ -1251,7 +1233,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       : 'bg-[#06140e] text-slate-300 hover:text-white border border-emerald-950'
                   }`}
                 >
-                  <QrCode className="w-4 h-4" /> PIX Dinâmico (Liberação Imediata)
+                  <QrCode className="w-4 h-4" /> PIX
                 </button>
 
                 <button
@@ -1295,7 +1277,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       <div className="w-full flex items-center justify-between pb-2 mb-2 border-b border-slate-200 text-slate-800 text-[11px] font-bold">
                         <span className="flex items-center gap-1 text-emerald-700">
                           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                          PIX Dinâmico
+                          PIX
                         </span>
                         <span className="font-mono text-xs font-black text-slate-950">
                           R$ {activePaymentAmount.toFixed(2).replace('.', ',')}
@@ -1332,9 +1314,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                         <span className="text-[11px] font-bold text-slate-700 block">
                           Aponte a câmera do aplicativo do seu banco
                         </span>
-                        <span className="text-[10px] text-slate-500">
-                          Tempo limite de validade: 14:59 min
-                        </span>
                       </div>
                     </div>
 
@@ -1357,35 +1336,8 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <label className="text-xs font-black text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                           <Key className="w-4 h-4 text-[#00F59B]" />
-                          Campo de Chave PIX Oficial:
+                          Chave PIX (aleatória):
                         </label>
-                        <span className="text-[11px] text-slate-400">
-                          Escolha o formato que preferir no seu banco
-                        </span>
-                      </div>
-
-                      {/* PIX KEY SELECTOR CHIPS */}
-                      <div className="flex flex-wrap gap-1.5">
-                        {DEFAULT_PIX_KEYS.map((k) => (
-                          <button
-                            key={k.type}
-                            onClick={() => {
-                              soundEffects.playClick();
-                              setSelectedPixKey(k);
-                            }}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                              selectedPixKey.type === k.type
-                                ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                                : 'bg-[#081a13] text-slate-300 hover:text-white border border-emerald-950'
-                            }`}
-                          >
-                            {k.type === 'email' && <Mail className="w-3 h-3" />}
-                            {k.type === 'cnpj' && <Building className="w-3 h-3" />}
-                            {k.type === 'phone' && <Phone className="w-3 h-3" />}
-                            {k.type === 'random' && <Key className="w-3 h-3" />}
-                            <span>{k.label}</span>
-                          </button>
-                        ))}
                       </div>
 
                       {/* INPUT COM A CHAVE PIX E BOTÃO DE COPIAR */}
@@ -1409,10 +1361,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                         </button>
                       </div>
 
-                      <div className="text-[11px] text-slate-400 flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#00F59B]" />
-                        <span>Tipo: <strong className="text-white capitalize">{selectedPixKey.type}</strong> · Beneficiário: <strong className="text-white">Zuxo Streaming Tecnologia LTDA</strong></span>
-                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        Prefira o QR Code ou o código copia e cola abaixo: eles já vão com o valor certo.
+                      </p>
                     </div>
 
                     {/* 2. CÓDIGO PIX COPIA E COLA (PADRÃO BR CODE EMV) */}
@@ -1444,41 +1395,6 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                       </div>
                     </div>
 
-                    {/* DADOS BANCÁRIOS & GATEWAY EFÍ BANK */}
-                    <div className="p-4 bg-[#06140e] rounded-2xl border border-emerald-900/60 text-xs text-slate-300 space-y-2">
-                      <div className="flex items-center justify-between pb-2 border-b border-emerald-950">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-[#00F59B] animate-pulse" />
-                          <span className="text-white font-bold flex items-center gap-1.5">
-                            <Zap className="w-3.5 h-3.5 text-[#00F59B]" />
-                            Gateway Oficial Efí Bank (Operacional)
-                          </span>
-                        </div>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950 text-[#00F59B] border border-emerald-800">
-                          {efiTxid ? `TXID: ${efiTxid.slice(0, 16)}...` : 'Transação Protegida'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Beneficiário:</span>
-                        <span className="font-semibold text-white">Lucas Sousa / Zuxo Streaming</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Chave Efí Bank:</span>
-                        <span className="font-mono text-emerald-300">fab4cde3-4367-4d0b-aa9b-4528dc04d371</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Instituição:</span>
-                        <span className="text-white">Efí Bank S.A. (ISPB 09088301 - Gerencianet)</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Ambiente de Transação:</span>
-                        <span className="text-amber-400 font-bold flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                          Sandbox Homologado & Ativo (Secrets Carregadas)
-                        </span>
-                      </div>
-                    </div>
-
                     {/* LIVE STATUS FEEDBACK */}
                     {efiFeedback && (
                       <div className="p-3 bg-emerald-950/80 border border-[#00F59B]/50 rounded-xl text-xs text-[#00F59B] flex items-center gap-2 animate-fadeIn">
@@ -1505,27 +1421,15 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                         )}
                       </button>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <button
+                      <button
                           type="button"
                           onClick={handleCheckEfiStatus}
                           disabled={isCheckingEfiStatus}
-                          className="py-2.5 px-3 bg-[#0a1f16] hover:bg-[#0e2e21] border border-emerald-800 text-emerald-300 hover:text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                          className="w-full py-2.5 px-3 bg-[#0a1f16] hover:bg-[#0e2e21] border border-emerald-800 text-emerald-300 hover:text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                         >
                           <RefreshCw className={`w-3.5 h-3.5 ${isCheckingEfiStatus ? 'animate-spin text-[#00F59B]' : ''}`} />
                           {isCheckingEfiStatus ? 'Consultando API...' : 'Checar Status no Efí Bank'}
                         </button>
-
-                        <button
-                          type="button"
-                          onClick={handleSimulateSandboxPayment}
-                          className="py-2.5 px-3 bg-[#1c1808] hover:bg-[#28220c] border border-amber-600/50 text-amber-300 hover:text-amber-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors"
-                          title="Simula o recebimento do PIX no ambiente Sandbox Efí Bank"
-                        >
-                          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                          Simular PIX Sandbox (Teste)
-                        </button>
-                      </div>
                     </div>
                   </div>
                 </div>

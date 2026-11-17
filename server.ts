@@ -106,7 +106,8 @@ function formatEmvField(id: string, value: string): string {
 function buildPixPayload(pixKey: string, amount: number, txId: string, description?: string): string {
   let cleanKey = pixKey.trim();
   let payload = formatEmvField('00', '01'); // Format Indicator
-  payload += formatEmvField('01', amount > 0 ? '12' : '11'); // Point of Initiation: 12 dynamic
+  // Field 01 (Point of Initiation) is left out on purpose: this is a static code built from the
+  // Pix key. Marking it "12" (single-use dynamic charge) makes bank apps reject the code.
 
   const gui = formatEmvField('00', 'br.gov.bcb.pix');
   const keyField = formatEmvField('01', cleanKey);

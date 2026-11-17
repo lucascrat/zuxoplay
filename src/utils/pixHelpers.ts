@@ -98,8 +98,8 @@ export function generatePixPayload({
   // 00 - Payload Format Indicator
   let payload = formatEmvField('00', '01');
 
-  // 01 - Point of Initiation Method: 12 = Dynamic (with value), 11 = Static
-  payload += formatEmvField('01', amount && amount > 0 ? '12' : '11');
+  // 01 - Point of Initiation Method is left out: this is a static code built from the Pix key.
+  // Marking it "12" (single-use dynamic charge) makes bank apps reject the code.
 
   // 26 - Merchant Account Information (GUI + Key)
   const gui = formatEmvField('00', 'br.gov.bcb.pix');
