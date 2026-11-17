@@ -140,6 +140,7 @@ export interface UserProfile {
   fcmToken?: string;
   fcmEnabled?: boolean;
   lastNotificationSentAt?: string;
+  slug?: string; // link próprio do cliente: zuxoplay.appbr.pro/<slug>
   payments?: Invoice[]; // pagamentos confirmados, gravados pelo servidor no cadastro do cliente
 }
 
