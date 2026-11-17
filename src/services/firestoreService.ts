@@ -5,7 +5,11 @@ import {
   updateDoc, 
   deleteDoc, 
   onSnapshot, 
-  getDocs 
+  getDocs,
+  getDocsFromServer,
+  query,
+  where,
+  limit
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { TrailerItem, ClientApp, ProgramItem, UserProfile, SystemLog } from '../types';
@@ -18,11 +22,13 @@ import {
 } from '../data/appData';
 
 // --- SEED INITIAL DATA IF COLLECTIONS ARE EMPTY ---
+// The existence checks use getDocsFromServer on purpose: with no connection plain getDocs answers from an
+// empty local cache, which would make this seed write the sample data over real clients once back online.
 export async function seedInitialFirestoreData() {
   try {
     // 1. Clients — only create the sample clients that are missing. Existing docs are never
     // overwritten, so access data, due dates and prices edited in the admin panel are kept.
-    const clientsSnap = await getDocs(collection(db, 'clients'));
+    const clientsSnap = await getDocsFromServer(collection(db, 'clients'));
     const existingClientIds = new Set(clientsSnap.docs.map((d) => d.id));
     await Promise.all(
       INITIAL_CLIENTS.filter((c) => !existingClientIds.has(c.id)).map((c) =>
@@ -31,7 +37,7 @@ export async function seedInitialFirestoreData() {
     );
 
     // System Logs
-    const logsSnap = await getDocs(collection(db, 'system_logs'));
+    const logsSnap = await getDocsFromServer(collection(db, 'system_logs'));
     if (logsSnap.empty) {
       for (const log of INITIAL_SYSTEM_LOGS) {
         await setDoc(doc(db, 'system_logs', log.id), log);
@@ -49,7 +55,7 @@ export async function seedInitialFirestoreData() {
       'tr-tulsa-king-s2', 'tr-severance-s2', 'tr-white-lotus-s3',
       'tr-lastofus-s2', 'tr-houseofdragon-s2', 'tr-deadpool3', 'tr-dune2',
     ];
-    const trailersSnap = await getDocs(collection(db, 'trailers'));
+    const trailersSnap = await getDocsFromServer(collection(db, 'trailers'));
     const existingTrailerIds = new Set(trailersSnap.docs.map((d) => d.id));
     await Promise.all(
       DEPRECATED_TRAILER_IDS.filter((id) => existingTrailerIds.has(id)).map((id) =>
@@ -68,7 +74,7 @@ export async function seedInitialFirestoreData() {
     }
 
     // 4. Programs
-    const progsSnap = await getDocs(collection(db, 'programs'));
+    const progsSnap = await getDocsFromServer(collection(db, 'programs'));
     if (progsSnap.empty) {
       for (const prog of INITIAL_PROGRAM_GUIDE) {
         await setDoc(doc(db, 'programs', prog.id), prog);
@@ -104,6 +110,15 @@ export function subscribeClients(
       handleFirestoreError(error, OperationType.GET, 'clients');
     }
   );
+}
+
+// Finds the client that owns a personal link. Throws when Firestore cannot be reached.
+export async function getClientBySlug(slug: string): Promise<UserProfile | null> {
+  // From the server only: an offline, empty cache must not be read as "this link does not exist".
+  const snap = await getDocsFromServer(query(collection(db, 'clients'), where('slug', '==', slug), limit(1)));
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { ...d.data(), id: d.id } as UserProfile;
 }
 
 export async function saveClientToFirestore(client: UserProfile): Promise<void> {

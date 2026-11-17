@@ -28,6 +28,7 @@ import {
   seedInitialFirestoreData,
   subscribeClients,
   saveClientToFirestore,
+  getClientBySlug,
   deleteClientFromFirestore,
   subscribeTrailers,
   saveTrailerToFirestore,
@@ -55,6 +56,7 @@ import { setupFCMForegroundListener } from './services/fcmService';
 import { PushNotificationToast } from './components/PushNotificationToast';
 import { InstallPwaPrompt } from './components/InstallPwaPrompt';
 import { buildClientInvoices } from './utils/billing';
+import { CLIENT_SITE_URL, slugFromPath } from './utils/clientLink';
 import { TrailerItem, ClientApp, ProgramItem, ViewScreen, UserProfile, PushNotification, Invoice, SystemLog } from './types';
 import { soundEffects } from './utils/audio';
 import { INITIAL_SYSTEM_LOGS } from './data/appData';
@@ -69,12 +71,15 @@ const TRAILERS_CATALOG_VERSION = '2026-11-16';
 const IS_ADMIN_HOST =
   /^adm/i.test(window.location.hostname) ||
   (window.location.hostname === 'localhost' && new URLSearchParams(window.location.search).has('admin'));
-const CLIENT_SITE_URL = 'https://zuxoplay.appbr.pro';
+
+// Personal link of a client (zuxoplay.appbr.pro/<slug>): opens that client's area with no sign-up.
+const LINK_SLUG = IS_ADMIN_HOST ? null : slugFromPath(window.location.pathname);
 
 const DEEP_LINK_SCREENS: ViewScreen[] = ['trailer-feed', 'customer-portal', 'daily-guide'];
 
 function getInitialScreen(): ViewScreen {
   if (IS_ADMIN_HOST) return 'admin-panel';
+  if (LINK_SLUG) return 'customer-portal';
   const requested = new URLSearchParams(window.location.search).get('screen') as ViewScreen | null;
   return requested && DEEP_LINK_SCREENS.includes(requested) ? requested : 'trailer-feed';
 }
@@ -105,8 +110,9 @@ export default function App() {
     return INITIAL_CLIENTS;
   });
 
-  // USER AUTH STATE (Lucas Sousa / lrsousadesenvolvedor@gmail.com)
+  // USER AUTH STATE. Nobody is signed in by default: a visitor either uses a personal link or logs in.
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    if (LINK_SLUG) return null; // the link decides who this is; never flash a previous user's data
     try {
       const isRealDataV2 = localStorage.getItem('zuxo_real_data_v2') === 'true';
       const saved = localStorage.getItem('zuxo_current_user');
@@ -117,8 +123,12 @@ export default function App() {
         }
       }
     } catch {}
-    return INITIAL_CLIENTS[0];
+    return null;
   });
+
+  // Personal link: 'loading' while the client is being found, 'missing' when no client owns it.
+  const [linkState, setLinkState] = useState<'idle' | 'loading' | 'missing' | 'error'>(LINK_SLUG ? 'loading' : 'idle');
+  const [linkAttempt, setLinkAttempt] = useState(0);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
@@ -285,6 +295,41 @@ export default function App() {
     };
   }, []);
 
+  // Resolve the personal link: find the client that owns it and open their area.
+  useEffect(() => {
+    if (!LINK_SLUG) return;
+    let cancelled = false;
+    setLinkState('loading');
+    getClientBySlug(LINK_SLUG)
+      .then((client) => {
+        if (cancelled) return;
+        if (client) {
+          setCurrentUser(client);
+          setLinkState('idle');
+        } else {
+          setLinkState('missing');
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Offline or Firestore unavailable: fall back to the copy of the client saved on this device.
+        let cached: UserProfile | undefined;
+        try {
+          const saved = JSON.parse(localStorage.getItem('zuxo_clients') || '[]') as UserProfile[];
+          cached = saved.find((c) => (c.slug || '').toLowerCase() === LINK_SLUG);
+        } catch {}
+        if (cached) {
+          setCurrentUser(cached);
+          setLinkState('idle');
+        } else {
+          setLinkState('error');
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [linkAttempt]);
+
   // Sync states to local backup
   useEffect(() => {
     try {
@@ -358,6 +403,8 @@ export default function App() {
     soundEffects.playClick();
     setCurrentUser(null);
     localStorage.removeItem('zuxo_current_user');
+    if (LINK_SLUG) window.history.replaceState(null, '', '/');
+    setLinkState('idle');
     setActiveScreen('trailer-feed');
   };
 
@@ -705,6 +752,43 @@ export default function App() {
               onMarkNotificationAsRead={(id) => markNotificationAsRead(id).catch(console.warn)}
               onDeleteNotification={(id) => deleteNotification(id).catch(console.warn)}
             />
+          ) : LINK_SLUG && linkState !== 'idle' ? (
+            <div className="min-h-[calc(100vh-64px)] flex flex-col items-center justify-center p-8 text-center bg-[#030907]">
+              <ZuxoLogo size="lg" subtitle="ÁREA DO CLIENTE" />
+              {linkState === 'loading' ? (
+                <>
+                  <div className="mt-6 w-8 h-8 rounded-full border-2 border-[#00F59B] border-t-transparent animate-spin" />
+                  <p className="text-sm text-slate-300 mt-4">Abrindo a sua área…</p>
+                </>
+              ) : (
+                <>
+                  <h2 className="text-xl font-bold text-white mt-4 mb-2">
+                    {linkState === 'missing' ? 'Link não encontrado' : 'Não foi possível abrir agora'}
+                  </h2>
+                  <p className="text-sm text-slate-400 mb-6 max-w-sm">
+                    {linkState === 'missing'
+                      ? 'Este link não existe ou foi desativado. Peça o seu link atualizado ao suporte.'
+                      : 'Verifique a sua conexão e tente novamente.'}
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-3">
+                    {linkState === 'error' && (
+                      <button
+                        onClick={() => setLinkAttempt((n) => n + 1)}
+                        className="px-5 py-3 bg-[#00F59B] text-slate-950 font-bold rounded-xl text-sm"
+                      >
+                        Tentar de novo
+                      </button>
+                    )}
+                    <button
+                      onClick={handleOpenLogin}
+                      className="px-5 py-3 bg-[#0a1e16] border border-emerald-600/40 text-emerald-300 font-bold rounded-xl text-sm"
+                    >
+                      Entrar com e-mail
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           ) : (
             <div className="min-h-[calc(100vh-64px)] flex flex-col items-center justify-center p-8 text-center bg-[#030907]">
               <ZuxoLogo size="lg" subtitle="ÁREA DO CLIENTE" />

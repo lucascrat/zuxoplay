@@ -34,6 +34,7 @@ import {
   AlertTriangle,
   Clock,
   ExternalLink,
+  Link2,
   RefreshCw,
   Link as LinkIcon,
   Key,
@@ -65,6 +66,8 @@ import {
 } from '../services/notificationService';
 import { INITIAL_SYSTEM_LOGS } from '../data/appData';
 import { displaySystemPushNotification } from '../services/fcmService';
+import { PaymentsByMonthTab } from './PaymentsByMonthTab';
+import { clientLinkUrl, isSlugTaken, suggestSlug, validateSlug, normalizeSlug } from '../utils/clientLink';
 import { getEfiGatewayConfig, EfiGatewayConfig, EFIBANK_OFFICIAL_PIX_KEY } from '../services/efiBankService';
 
 interface AdminPanelProps {
@@ -122,7 +125,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onAddSystemLog,
   onDeleteSystemLog,
 }) => {
-  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'revenue' | 'notifications' | 'logs' | 'apps' | 'trailers' | 'guide' | 'gateway' | 'whatsapp' | 'wmanage' | 'plans'>('clients');
+  const [activeAdminTab, setActiveAdminTab] = useState<'clients' | 'revenue' | 'payments' | 'notifications' | 'logs' | 'apps' | 'trailers' | 'guide' | 'gateway' | 'whatsapp' | 'wmanage' | 'plans'>('clients');
   const [showChartInClientsTab, setShowChartInClientsTab] = useState<boolean>(true);
 
   // EFÍ BANK GATEWAY CONFIG & TESTING STATE
@@ -305,6 +308,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [cUsername, setCUsername] = useState<string>('');
   const [cPassword, setCPassword] = useState<string>('zuxo8849pass');
   const [cNotes, setCNotes] = useState<string>('');
+  const [cSlug, setCSlug] = useState<string>('');
   const [cCustomApps, setCCustomApps] = useState<ClientApp[]>([]);
 
   // Client search and filter
@@ -417,6 +421,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCUsername(client.username || client.email.split('@')[0]);
     setCPassword(client.password || 'zuxo2026pass');
     setCNotes(client.notes || '');
+    setCSlug(client.slug || suggestSlug(client.name, clients, client.id));
     setCCustomApps(client.customApps || apps);
     setIsAddingAppToClient(false);
     setIsClientModalOpen(true);
@@ -438,6 +443,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setCUsername('');
     setCPassword('zuxo2026pass');
     setCNotes('');
+    setCSlug('');
     setCCustomApps([...apps]); // clone default apps
     setIsAddingAppToClient(false);
     setIsClientModalOpen(true);
@@ -516,6 +522,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     e.preventDefault();
     if (!cName.trim() || !cEmail.trim()) return;
 
+    // Personal link: empty means "generate one from the name". It must be valid and unique.
+    const finalSlug = normalizeSlug(cSlug) || suggestSlug(cName, clients, editingClient?.id);
+    const slugError = validateSlug(finalSlug) || (isSlugTaken(finalSlug, clients, editingClient?.id) ? 'Já existe outro cliente com este link. Escolha outro.' : null);
+    if (slugError) {
+      soundEffects.playClick();
+      showNotification(`⚠ ${slugError}`);
+      return;
+    }
+
     soundEffects.playSelect();
 
     const finalUsername = cUsername.trim() || cEmail.split('@')[0];
@@ -538,6 +553,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         username: finalUsername,
         password: finalPassword,
         notes: cNotes,
+        slug: finalSlug,
         customApps: cCustomApps,
         createdAt: new Date().toISOString().split('T')[0],
       };
@@ -581,6 +597,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         username: finalUsername,
         password: finalPassword,
         notes: cNotes,
+        slug: finalSlug,
         customApps: cCustomApps,
       };
       onUpdateClient(updated);
@@ -1026,6 +1043,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <button
             onClick={() => {
               soundEffects.playClick();
+              setActiveAdminTab('payments');
+            }}
+            className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
+              activeAdminTab === 'payments'
+                ? 'bg-[#00F59B] text-slate-950 shadow-md'
+                : 'text-slate-400 hover:text-white bg-[#0a1e16]'
+            }`}
+          >
+            <DollarSign className="w-4 h-4" />
+            Pagamentos
+          </button>
+
+          <button
+            onClick={() => {
+              soundEffects.playClick();
               setActiveAdminTab('notifications');
             }}
             className={`py-2 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all whitespace-nowrap ${
@@ -1432,6 +1464,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <Eye className="w-3.5 h-3.5" /> Ver Área Dele
                     </button>
 
+                    {client.slug && (
+                      <button
+                        onClick={() => {
+                          soundEffects.playClick();
+                          navigator.clipboard.writeText(clientLinkUrl(client.slug!)).then(() => showNotification(`Link de ${client.name} copiado!`));
+                        }}
+                        className="px-2.5 py-1.5 bg-[#071610] hover:bg-[#0c241b] border border-emerald-600/50 text-[#00F59B] text-xs font-bold rounded-xl flex items-center gap-1.5"
+                        title={`Copiar o link próprio: ${clientLinkUrl(client.slug)}`}
+                      >
+                        <Link2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Copiar link</span>
+                      </button>
+                    )}
+
                     {/* MANUAL RENEWAL BUTTON (+30 DIAS) */}
                     <button
                       onClick={() => handleQuickRenewSubscription(client, 30)}
@@ -1584,6 +1630,55 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       className="w-full bg-[#05130d] border border-emerald-900/60 rounded-xl px-3 py-2 text-white outline-none focus:border-[#00F59B]"
                     />
                   </div>
+                </div>
+
+                {/* LINK PRÓPRIO DO CLIENTE: abre a área dele sem cadastro */}
+                <div className="bg-[#05140e] border border-emerald-600/50 rounded-2xl p-4 space-y-2.5">
+                  <label htmlFor="client-slug" className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <Link2 className="w-4 h-4 text-[#00F59B]" /> Link próprio do cliente
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="flex flex-1 min-w-0 items-stretch rounded-xl overflow-hidden border border-emerald-900/60 focus-within:border-[#00F59B]">
+                      <span className="px-3 flex items-center bg-[#071710] text-slate-400 text-xs font-mono whitespace-nowrap">zuxoplay.appbr.pro/</span>
+                      <input
+                        id="client-slug"
+                        type="text"
+                        value={cSlug}
+                        maxLength={30}
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        placeholder="gerado ao salvar"
+                        onChange={(e) =>
+                          setCSlug(e.target.value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9-]/g, '').slice(0, 30))
+                        }
+                        className="flex-1 min-w-0 bg-[#05130d] px-3 py-2.5 text-white font-mono text-sm outline-none"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { soundEffects.playClick(); setCSlug(suggestSlug(cName, clients, editingClient?.id)); }}
+                        className="px-3 py-2 min-h-11 bg-[#0a2318] hover:bg-[#0e2e20] border border-emerald-700/60 text-emerald-300 text-xs font-bold rounded-xl"
+                      >
+                        Gerar
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!cSlug}
+                        onClick={() => {
+                          soundEffects.playClick();
+                          navigator.clipboard.writeText(clientLinkUrl(normalizeSlug(cSlug))).then(() => showNotification('Link copiado!'));
+                        }}
+                        className="px-3 py-2 min-h-11 bg-[#0c2f21] hover:bg-[#124230] disabled:opacity-40 border border-emerald-500/50 text-[#00F59B] text-xs font-bold rounded-xl flex items-center gap-1.5"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> Copiar
+                      </button>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Quem abrir este link entra direto na área do cliente, sem cadastro — e vê o usuário e a senha do app. Prefira um nome difícil de adivinhar (use "Gerar", que acrescenta um código) e envie o link só para o próprio cliente.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2116,6 +2211,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         {/* ====================================================================== */}
         {/* TAB: RECEITA MENSAL ACUMULADA (GRÁFICO RECHARTS & ANÁLISE FINANCEIRA)  */}
         {/* ====================================================================== */}
+        {activeAdminTab === 'payments' && <PaymentsByMonthTab clients={clients} />}
+
         {activeAdminTab === 'revenue' && (
           <div className="space-y-6">
             <RevenueBarChart clients={clients} />
