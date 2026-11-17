@@ -101,6 +101,8 @@ export interface PixChargeRecord {
   endToEndId?: string;
   planId?: string;
   efi?: boolean; // created on the Efí Pix API, so its status can be confirmed with the bank
+  appliedAt?: string; // when the renewal was written to the client's record
+  newExpirationDate?: string;
 }
 
 const activeCharges = new Map<string, PixChargeRecord>();
@@ -140,9 +142,96 @@ function saveChargesToDisk() {
 
 loadChargesFromDisk();
 
+// --- RENEWAL: the server writes the paid period to the client's record (Firestore) ---
+// Doing it here, and not in the browser, keeps the new due date even if the client closes the page.
+let firebaseCfg: { projectId?: string; apiKey?: string; firestoreDatabaseId?: string } = {};
+try {
+  firebaseCfg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'firebase-applet-config.json'), 'utf-8'));
+} catch (err) {
+  console.warn('[Renovação] firebase-applet-config.json não encontrado:', (err as Error).message);
+}
+const FIRESTORE_DOCS = `https://firestore.googleapis.com/v1/projects/${firebaseCfg.projectId}/databases/${firebaseCfg.firestoreDatabaseId || '(default)'}/documents`;
+
+function todayInBrazil(): Date {
+  const [y, m, d] = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date()).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+function formatBrDate(date: Date): string {
+  return `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${date.getUTCFullYear()}`;
+}
+
+// New due date: counts from the current due date when it is still in the future, so no paid day is lost.
+export function nextExpirationDate(currentExpiration: string | undefined, months: number | undefined, today = todayInBrazil()): string {
+  const [d, m, y] = String(currentExpiration || '').split('/').map(Number);
+  const current = d && m && y ? new Date(Date.UTC(y, m - 1, d)) : null;
+  const next = new Date(current && current.getTime() > today.getTime() ? current : today);
+  if (months && months > 0) next.setUTCMonth(next.getUTCMonth() + months);
+  else next.setUTCDate(next.getUTCDate() + 30);
+  return formatBrDate(next);
+}
+
+async function applyPaymentToClient(charge: PixChargeRecord): Promise<void> {
+  if (charge.status !== 'CONCLUIDA' || charge.appliedAt || !charge.clientId || !firebaseCfg.projectId) return;
+  if (!/^[a-zA-Z0-9_-]+$/.test(charge.clientId)) return;
+  const docUrl = `${FIRESTORE_DOCS}/clients/${charge.clientId}`;
+  try {
+    const current = await fetch(`${docUrl}?key=${firebaseCfg.apiKey}`);
+    if (!current.ok) throw new Error(`leitura do cliente falhou (HTTP ${current.status})`);
+    const fields = (await current.json()).fields || {};
+    const payments: any[] = fields.payments?.arrayValue?.values || [];
+    const alreadyThere = payments.find((p) => p?.mapValue?.fields?.id?.stringValue === charge.txid);
+
+    if (alreadyThere) {
+      charge.newExpirationDate = alreadyThere.mapValue.fields.dueDate?.stringValue;
+    } else {
+      const plan = charge.planId ? paymentPlans.find((p) => p.id === charge.planId) : undefined;
+      const newExpiration = nextExpirationDate(fields.expirationDate?.stringValue, plan?.months);
+      const payment = {
+        mapValue: {
+          fields: {
+            id: { stringValue: charge.txid },
+            description: { stringValue: plan ? `Plano ${plan.name}` : 'Renovação da assinatura' },
+            date: { stringValue: formatBrDate(todayInBrazil()) },
+            dueDate: { stringValue: newExpiration },
+            amount: { doubleValue: charge.amount },
+            status: { stringValue: 'pago' },
+            paymentMethod: { stringValue: 'PIX Efí Bank' },
+            clientId: { stringValue: charge.clientId },
+          },
+        },
+      };
+      const update: Record<string, unknown> = {
+        expirationDate: { stringValue: newExpiration },
+        status: { stringValue: 'ativo' },
+        payments: { arrayValue: { values: [payment, ...payments].slice(0, 60) } },
+      };
+      if (plan) {
+        update.screens = { integerValue: String(plan.screens) };
+        update.plan = { stringValue: plan.name };
+      }
+      const mask = Object.keys(update).map((f) => `updateMask.fieldPaths=${f}`).join('&');
+      const saved = await fetch(`${docUrl}?${mask}&currentDocument.exists=true&key=${firebaseCfg.apiKey}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: update }),
+      });
+      if (!saved.ok) throw new Error(`gravação da renovação falhou (HTTP ${saved.status})`);
+      charge.newExpirationDate = newExpiration;
+      console.log(`[Renovação] Cliente ${charge.clientId} renovado até ${newExpiration} (cobrança ${charge.txid}).`);
+    }
+    charge.appliedAt = new Date().toISOString();
+    saveChargesToDisk();
+  } catch (err) {
+    console.warn(`[Renovação] Cobrança ${charge.txid} paga, mas a renovação não foi gravada:`, (err as Error).message);
+  }
+}
+
 // Asks Efí whether an open charge was paid. Only charges created on the Efí API can be confirmed.
 const lastEfiCheck = new Map<string, number>();
 async function refreshChargeFromEfi(charge: PixChargeRecord): Promise<void> {
+  // A paid charge whose renewal could not be written yet is retried here.
+  if (charge.status === 'CONCLUIDA') return applyPaymentToClient(charge);
   if (!EFI_API_ENABLED || !charge.efi || charge.status !== 'ATIVA') return;
   const last = lastEfiCheck.get(charge.txid) || 0;
   if (Date.now() - last < 4000) return;
@@ -158,6 +247,7 @@ async function refreshChargeFromEfi(charge: PixChargeRecord): Promise<void> {
       charge.paymentMethod = 'PIX Efí Bank';
       saveChargesToDisk();
       console.log(`[Efí Pix] Cobrança ${charge.txid} paga (confirmada pela Efí).`);
+      await applyPaymentToClient(charge);
     } else if (res.data.status && res.data.status !== 'ATIVA') {
       charge.status = 'EXPIRADA';
       saveChargesToDisk();
@@ -510,6 +600,8 @@ app.get('/api/pix/check-status/:txid', async (req: Request, res: Response) => {
     clientId: charge.clientId,
     status: charge.status,
     paid: charge.status === 'CONCLUIDA',
+    applied: Boolean(charge.appliedAt),
+    expirationDate: charge.newExpirationDate,
     amount: charge.amount,
     paidAt: charge.paidAt,
     message: charge.status === 'CONCLUIDA' ? 'Pagamento confirmado pelo Efí Bank!' : 'Aguardando pagamento...'

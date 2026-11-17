@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Flame, 
   User, 
@@ -22,7 +22,6 @@ import {
   INITIAL_TRAILERS, 
   INITIAL_APPS, 
   INITIAL_PROGRAM_GUIDE,
-  INITIAL_INVOICES,
   INITIAL_CLIENTS
 } from './data/appData';
 import { 
@@ -55,6 +54,7 @@ import {
 import { setupFCMForegroundListener } from './services/fcmService';
 import { PushNotificationToast } from './components/PushNotificationToast';
 import { InstallPwaPrompt } from './components/InstallPwaPrompt';
+import { buildClientInvoices } from './utils/billing';
 import { TrailerItem, ClientApp, ProgramItem, ViewScreen, UserProfile, PushNotification, Invoice, SystemLog } from './types';
 import { soundEffects } from './utils/audio';
 import { INITIAL_SYSTEM_LOGS } from './data/appData';
@@ -172,20 +172,8 @@ export default function App() {
     return INITIAL_NOTIFICATIONS;
   });
 
-  // INVOICES STATE (Real Invoices with PIX Key)
-  const [invoices, setInvoices] = useState<Invoice[]>(() => {
-    try {
-      const isRealDataV2 = localStorage.getItem('zuxo_real_data_v2') === 'true';
-      const saved = localStorage.getItem('zuxo_invoices');
-      if (saved && isRealDataV2) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].dueDate !== '15/05/2026') {
-          return parsed;
-        }
-      }
-    } catch {}
-    return INITIAL_INVOICES;
-  });
+  // Invoices come from the client's own record (payments confirmed by the server + renewal due).
+  const clientInvoices = useMemo(() => buildClientInvoices(currentUser), [currentUser]);
 
   // SYSTEM AUDIT & CRITICAL ACTIVITY LOGS STATE
   const [systemLogs, setSystemLogs] = useState<SystemLog[]>(() => {
@@ -328,16 +316,6 @@ export default function App() {
       localStorage.setItem('zuxo_client_apps', JSON.stringify(apps));
     } catch {}
   }, [apps]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('zuxo_invoices', JSON.stringify(invoices));
-    } catch {}
-  }, [invoices]);
-
-  const handleUpdateInvoices = (updatedInvoices: Invoice[]) => {
-    setInvoices(updatedInvoices);
-  };
 
   // Auth Handlers
   const handleOpenLogin = () => {
@@ -717,11 +695,10 @@ export default function App() {
             <CustomerPortal
               currentUser={currentUser}
               apps={apps}
-              invoices={invoices}
+              invoices={clientInvoices}
               programs={programs}
               notifications={notifications}
               onUpdateUser={handleUpdateUser}
-              onUpdateInvoices={handleUpdateInvoices}
               onLogout={handleLogout}
               onBackToFeed={() => setActiveScreen('trailer-feed')}
               onOpenDailyGuide={() => setActiveScreen('daily-guide')}

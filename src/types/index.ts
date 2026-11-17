@@ -140,6 +140,7 @@ export interface UserProfile {
   fcmToken?: string;
   fcmEnabled?: boolean;
   lastNotificationSentAt?: string;
+  payments?: Invoice[]; // pagamentos confirmados, gravados pelo servidor no cadastro do cliente
 }
 
 export type NotificationType = 'expiration_warning' | 'new_invoice' | 'plan_expired' | 'custom';

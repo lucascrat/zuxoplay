@@ -22,6 +22,8 @@ export interface EfiPixStatusResponse {
   invoiceId?: string;
   status: 'ATIVA' | 'CONCLUIDA' | 'EXPIRADA';
   paid: boolean;
+  applied?: boolean; // the server already wrote the renewal to the client's record
+  expirationDate?: string;
   amount?: number;
   paidAt?: string;
   message?: string;
