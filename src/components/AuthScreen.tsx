@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   User, 
   Mail, 
@@ -25,9 +25,11 @@ import { soundEffects } from '../utils/audio';
 interface AuthScreenProps {
   isOpen: boolean;
   initialMode?: 'login' | 'register';
-  registeredClients?: UserProfile[];
+  /** Looks a client up by e-mail. Resolves to null when there is none; rejects when it cannot be checked. */
+  onLookupClient: (email: string) => Promise<UserProfile | null>;
   onClose: () => void;
-  onSuccessAuth: (user: UserProfile) => void;
+  /** isNew is true when the person just registered. */
+  onSuccessAuth: (user: UserProfile, isNew: boolean) => void;
 }
 
 // Curated avatar presets with high-quality styled avatars
@@ -43,7 +45,7 @@ export const AVATAR_PRESETS = [
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   isOpen,
   initialMode = 'login',
-  registeredClients = [],
+  onLookupClient,
   onClose,
   onSuccessAuth,
 }) => {
@@ -51,8 +53,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [showPassword, setShowPassword] = useState<boolean>(false);
   
   // Login fields
-  const [loginEmail, setLoginEmail] = useState<string>('lrsousadesenvolvedor@gmail.com');
-  const [loginPassword, setLoginPassword] = useState<string>('zuxo2026pass');
+  const [loginEmail, setLoginEmail] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [isChecking, setIsChecking] = useState<boolean>(false);
 
   // Register fields
   const [regName, setRegName] = useState<string>('');
@@ -65,6 +68,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Nothing typed here may stay on the device after the window closes (the next person could see it).
+  useEffect(() => {
+    if (isOpen) return;
+    setLoginEmail('');
+    setLoginPassword('');
+    setRegName('');
+    setRegEmail('');
+    setRegPhone('');
+    setRegPassword('');
+    setRegConfirmPassword('');
+    setErrorMessage(null);
+    setIsChecking(false);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -86,8 +103,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   };
 
-  // Login submission
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  // Login submission: only an existing client can sign in.
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -97,48 +114,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
 
     soundEffects.playSelect();
-
-    // Check if client exists in registeredClients
-    const matched = registeredClients.find(
-      (c) => c.email.toLowerCase() === loginEmail.trim().toLowerCase()
-    );
-
-    if (matched) {
-      onSuccessAuth(matched);
-      return;
+    setIsChecking(true);
+    try {
+      const matched = await onLookupClient(loginEmail);
+      if (matched) {
+        onSuccessAuth(matched, false);
+      } else {
+        setErrorMessage('Não encontramos uma conta com este e-mail. Se você ainda não é cliente, toque em "Cadastrar-se".');
+      }
+    } catch {
+      setErrorMessage('Não foi possível entrar agora. Verifique a sua conexão e tente de novo.');
+    } finally {
+      setIsChecking(false);
     }
-
-    const expDate = new Date();
-    expDate.setDate(expDate.getDate() + 30);
-    const day = String(expDate.getDate()).padStart(2, '0');
-    const month = String(expDate.getMonth() + 1).padStart(2, '0');
-    const year = expDate.getFullYear();
-    const formattedExp = `${day}/${month}/${year}`;
-
-    // Otherwise create session with defaults
-    const authenticatedUser: UserProfile = {
-      id: `usr-${Date.now()}`,
-      name: loginEmail.includes('lucas') ? 'Lucas Sousa' : loginEmail.split('@')[0],
-      email: loginEmail,
-      whatsapp: '(11) 98849-2026',
-      avatar: regAvatar || AVATAR_PRESETS[0],
-      plan: 'Plano VIP 2 Telas',
-      expirationDate: formattedExp,
-      screens: 2,
-      customPrice: 35.00,
-      customApps: [],
-      status: 'ativo',
-      provider: 'http://dns.zuxoplayer.live:8080',
-      username: loginEmail.split('@')[0],
-      password: 'zuxo2026pass',
-      createdAt: new Date().toISOString().split('T')[0],
-    };
-
-    onSuccessAuth(authenticatedUser);
   };
 
   // Register submission
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -153,6 +145,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
 
     soundEffects.playSelect();
+
+    // An e-mail that already has an account must not register again (it would open that account).
+    setIsChecking(true);
+    try {
+      if (await onLookupClient(regEmail)) {
+        setErrorMessage('Este e-mail já está cadastrado. Toque em "Entrar (Login)".');
+        return;
+      }
+    } catch {
+      setErrorMessage('Não foi possível concluir o cadastro agora. Verifique a sua conexão e tente de novo.');
+      return;
+    } finally {
+      setIsChecking(false);
+    }
 
     const newUser: UserProfile = {
       id: `usr-${Date.now()}`,
@@ -176,13 +182,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       colors: ['#00F59B', '#10E58F', '#047857', '#FFFFFF']
     });
 
-    onSuccessAuth(newUser);
-  };
-
-  const handleQuickSelectClient = (client: UserProfile) => {
-    soundEffects.playClick();
-    setLoginEmail(client.email);
-    setLoginPassword('zuxo2026pass');
+    onSuccessAuth(newUser, true);
   };
 
   return (
@@ -313,43 +313,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-[#00F59B] hover:brightness-110 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-transform active:scale-95 mt-2"
+              disabled={isChecking}
+              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-[#00F59B] hover:brightness-110 disabled:opacity-60 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-transform active:scale-95 mt-2"
             >
-              Entrar na Área do Cliente
+              {isChecking ? 'Verificando…' : 'Entrar na Área do Cliente'}
             </button>
-
-            {/* QUICK CLIENT SELECTION PILLS (SHOWS REGISTERED CLIENTS) */}
-            {registeredClients.length > 0 && (
-              <div className="pt-3 border-t border-emerald-950/80">
-                <span className="block text-[10px] text-slate-400 mb-2 font-semibold">
-                  Ou selecione uma conta de cliente cadastrada para testar:
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  {registeredClients.slice(0, 4).map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => handleQuickSelectClient(c)}
-                      className={`p-2 rounded-xl border text-left flex items-center gap-2 transition-all ${
-                        loginEmail.toLowerCase() === c.email.toLowerCase()
-                          ? 'bg-[#00F59B]/15 border-[#00F59B] text-white'
-                          : 'bg-[#071912] border-emerald-900/50 hover:border-emerald-700 text-slate-300'
-                      }`}
-                    >
-                      <img
-                        src={c.avatar}
-                        alt={c.name}
-                        className="w-7 h-7 rounded-full object-cover border border-[#00F59B] flex-shrink-0"
-                      />
-                      <div className="overflow-hidden text-[10px]">
-                        <p className="font-bold truncate text-white">{c.name.split(' ')[0]}</p>
-                        <p className="text-[9px] text-[#00F59B] truncate">{c.screens}t · R${c.customPrice}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </form>
         )}
 
@@ -535,9 +503,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
             <button
               type="submit"
+              disabled={isChecking}
               className="w-full py-3 bg-gradient-to-r from-emerald-500 to-[#00F59B] hover:brightness-110 text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl shadow-lg transition-transform active:scale-95 mt-2"
             >
-              Criar Minha Conta Zuxo
+              {isChecking ? 'Verificando…' : 'Criar Minha Conta Zuxo'}
             </button>
           </form>
         )}
