@@ -3353,38 +3353,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <Zap className="w-4 h-4" /> Gerar Cobrança PIX de Teste
                   </button>
 
-                  {generatedTestCharge && (
-                    <button
-                      onClick={async () => {
-                        soundEffects.playSelect();
-                        setEfiTestStatus('Simulando pagamento no Sandbox Efí Bank...');
-                        try {
-                          const res = await fetch('/api/pix/simulate-pay', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ txid: generatedTestCharge.txid })
-                          });
-                          const data = await res.json();
-                          setEfiTestStatus(`Pagamento CONFIRMADO no Sandbox Efí Bank às ${new Date().toLocaleTimeString('pt-BR')}!`);
-                          if (onAddSystemLog) {
-                            onAddSystemLog({
-                              action: 'subscription_renewal',
-                              severity: 'info',
-                              title: 'Pagamento Efí Bank Confirmado',
-                              adminUser: 'Admin Master (Sandbox)',
-                              description: `Pagamento simulado no Efí Bank com sucesso (TXID: ${generatedTestCharge.txid})`
-                            });
-                          }
-                        } catch (err: any) {
-                          setEfiTestStatus(`Erro ao simular: ${err.message}`);
-                        }
-                      }}
-                      className="w-full py-2.5 bg-[#1c1808] hover:bg-[#28220c] border border-amber-600/60 text-amber-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all"
-                    >
-                      <Sparkles className="w-4 h-4 text-amber-400" /> Simular Baixa Automática no Sandbox
-                    </button>
-                  )}
-
                   {efiTestStatus && (
                     <div className="p-3 bg-[#05130d] border border-emerald-900/60 rounded-xl text-xs text-emerald-300 font-mono">
                       {efiTestStatus}

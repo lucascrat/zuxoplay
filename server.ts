@@ -5,6 +5,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import QRCode from 'qrcode';
+import https from 'https';
 
 dotenv.config();
 
@@ -26,6 +27,64 @@ const EFIBANK_CLIENT_ID = process.env.EFIBANK_CLIENT_ID || 'Client_Id_62a2fe6ca8
 const EFIBANK_CLIENT_SECRET = process.env.EFIBANK_CLIENT_SECRET || 'Client_Secret_c7101c6e1f68b0860eec3b57abe31ec8c7f46a42';
 const EFIBANK_PIX_KEY = process.env.EFIBANK_PIX_KEY || 'fab4cde3-4367-4d0b-aa9b-4528dc04d371';
 const EFIBANK_SANDBOX = process.env.EFIBANK_SANDBOX !== 'false'; // Default to true if set or empty
+// Account certificate (.p12, base64). With it, charges are created and confirmed on the Efí Pix API.
+const EFIBANK_CERT_BASE64 = (process.env.EFIBANK_CERT_BASE64 || '').replace(/\s+/g, '');
+const EFI_API_ENABLED = Boolean(EFIBANK_CERT_BASE64 && EFIBANK_CLIENT_ID && EFIBANK_CLIENT_SECRET && EFIBANK_PIX_KEY);
+const EFI_API_HOST = EFIBANK_SANDBOX ? 'pix-h.api.efipay.com.br' : 'pix.api.efipay.com.br';
+const efiAgent = EFI_API_ENABLED
+  ? new https.Agent({ pfx: Buffer.from(EFIBANK_CERT_BASE64, 'base64'), passphrase: '', keepAlive: true })
+  : undefined;
+
+function efiHttp(method: string, pathName: string, headers: Record<string, string>, body?: unknown): Promise<{ status: number; data: any }> {
+  return new Promise((resolve, reject) => {
+    const payload = body === undefined ? undefined : JSON.stringify(body);
+    const req = https.request(
+      {
+        host: EFI_API_HOST,
+        path: pathName,
+        method,
+        agent: efiAgent,
+        timeout: 15000,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(payload ? { 'Content-Length': Buffer.byteLength(payload).toString() } : {}),
+          ...headers,
+        },
+      },
+      (response) => {
+        let raw = '';
+        response.on('data', (chunk) => (raw += chunk));
+        response.on('end', () => {
+          let data: any = raw;
+          try { data = raw ? JSON.parse(raw) : {}; } catch { /* keep raw text */ }
+          resolve({ status: response.statusCode || 0, data });
+        });
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('Efí API timeout')));
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+let efiToken: { value: string; expiresAt: number } | null = null;
+
+async function efiAccessToken(): Promise<string> {
+  if (efiToken && efiToken.expiresAt > Date.now() + 60_000) return efiToken.value;
+  const basic = Buffer.from(`${EFIBANK_CLIENT_ID}:${EFIBANK_CLIENT_SECRET}`).toString('base64');
+  const res = await efiHttp('POST', '/oauth/token', { Authorization: `Basic ${basic}` }, { grant_type: 'client_credentials' });
+  if (res.status !== 200 || !res.data?.access_token) {
+    throw new Error(`Efí auth failed (HTTP ${res.status})`);
+  }
+  efiToken = { value: res.data.access_token, expiresAt: Date.now() + (res.data.expires_in || 3600) * 1000 };
+  return efiToken.value;
+}
+
+async function efiApi(method: string, pathName: string, body?: unknown) {
+  const token = await efiAccessToken();
+  return efiHttp(method, pathName, { Authorization: `Bearer ${token}` }, body);
+}
 
 // Persistent store for active and completed Pix charges
 export interface PixChargeRecord {
@@ -41,6 +100,7 @@ export interface PixChargeRecord {
   paymentMethod?: string;
   endToEndId?: string;
   planId?: string;
+  efi?: boolean; // created on the Efí Pix API, so its status can be confirmed with the bank
 }
 
 const activeCharges = new Map<string, PixChargeRecord>();
@@ -79,6 +139,33 @@ function saveChargesToDisk() {
 }
 
 loadChargesFromDisk();
+
+// Asks Efí whether an open charge was paid. Only charges created on the Efí API can be confirmed.
+const lastEfiCheck = new Map<string, number>();
+async function refreshChargeFromEfi(charge: PixChargeRecord): Promise<void> {
+  if (!EFI_API_ENABLED || !charge.efi || charge.status !== 'ATIVA') return;
+  const last = lastEfiCheck.get(charge.txid) || 0;
+  if (Date.now() - last < 4000) return;
+  lastEfiCheck.set(charge.txid, Date.now());
+  try {
+    const res = await efiApi('GET', `/v2/cob/${charge.txid}`);
+    if (res.status !== 200) return;
+    if (res.data.status === 'CONCLUIDA') {
+      const pix = Array.isArray(res.data.pix) ? res.data.pix[0] : undefined;
+      charge.status = 'CONCLUIDA';
+      charge.paidAt = pix?.horario || new Date().toISOString();
+      charge.endToEndId = pix?.endToEndId;
+      charge.paymentMethod = 'PIX Efí Bank';
+      saveChargesToDisk();
+      console.log(`[Efí Pix] Cobrança ${charge.txid} paga (confirmada pela Efí).`);
+    } else if (res.data.status && res.data.status !== 'ATIVA') {
+      charge.status = 'EXPIRADA';
+      saveChargesToDisk();
+    }
+  } catch (err) {
+    console.warn('[Efí Pix] Falha ao consultar cobrança:', (err as Error).message);
+  }
+}
 
 // Helper: Calculate CRC16 CCITT
 function calculateCRC16(payload: string): string {
@@ -140,6 +227,7 @@ app.get('/api/pix/config', (req: Request, res: Response) => {
   const isConfigured = Boolean(EFIBANK_CLIENT_ID && EFIBANK_CLIENT_SECRET && EFIBANK_PIX_KEY);
   res.json({
     configured: isConfigured,
+    apiEnabled: EFI_API_ENABLED,
     provider: 'Efí Bank (ex-Gerencianet)',
     pixKey: EFIBANK_PIX_KEY,
     clientIdMasked: EFIBANK_CLIENT_ID ? `${EFIBANK_CLIENT_ID.substring(0, 14)}...${EFIBANK_CLIENT_ID.substring(EFIBANK_CLIENT_ID.length - 4)}` : null,
@@ -318,14 +406,40 @@ app.post('/api/pix/create-charge', async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Este plano não está mais disponível. Atualize a página e escolha outro.' });
     }
     const finalAmount = plan ? plan.price : parseFloat(amount) || 35.00;
-    const txid = `ZX${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
+    // Efí requires 26-35 alphanumeric characters for the charge id.
+    const txid = `ZX${Date.now()}${Math.random().toString(36).slice(2).toUpperCase().padEnd(11, '0')}`.replace(/[^A-Za-z0-9]/g, '').slice(0, 32).padEnd(26, '0');
+    const chargeLabel = String(description || `Zuxo Player - ${clientName || 'Assinatura'}`).slice(0, 140);
 
-    const pixCopiaECola = buildPixPayload(
-      EFIBANK_PIX_KEY,
-      finalAmount,
-      txid,
-      description || `Zuxo Player - ${clientName || 'Assinatura'}`
-    );
+    // 1. Real charge on the Efí Pix API (payment is confirmed by the bank).
+    let pixCopiaECola = '';
+    let createdOnEfi = false;
+    if (EFI_API_ENABLED) {
+      try {
+        const cob = await efiApi('PUT', `/v2/cob/${txid}`, {
+          calendario: { expiracao: 3600 },
+          valor: { original: finalAmount.toFixed(2) },
+          chave: EFIBANK_PIX_KEY,
+          solicitacaoPagador: chargeLabel,
+        });
+        if (cob.status === 201 || cob.status === 200) {
+          pixCopiaECola = cob.data.pixCopiaECola || '';
+          if (!pixCopiaECola && cob.data.loc?.id) {
+            const qr = await efiApi('GET', `/v2/loc/${cob.data.loc.id}/qrcode`);
+            pixCopiaECola = qr.data?.qrcode || '';
+          }
+          createdOnEfi = Boolean(pixCopiaECola);
+        } else {
+          console.warn(`[Efí Pix] Cobrança recusada (HTTP ${cob.status}):`, JSON.stringify(cob.data).slice(0, 300));
+        }
+      } catch (err) {
+        console.warn('[Efí Pix] Falha ao criar cobrança:', (err as Error).message);
+      }
+    }
+
+    // 2. Fallback: static code from the Pix key. It can be paid, but only confirmed by hand.
+    if (!pixCopiaECola) {
+      pixCopiaECola = buildPixPayload(EFIBANK_PIX_KEY, finalAmount, txid, chargeLabel);
+    }
 
     const qrCodeDataUrl = await QRCode.toDataURL(pixCopiaECola, {
       width: 320,
@@ -346,7 +460,8 @@ app.post('/api/pix/create-charge', async (req: Request, res: Response) => {
       description: description || `Assinatura Zuxo Player VIP`,
       pixCopiaECola,
       status: 'ATIVA',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      efi: createdOnEfi
     };
 
     activeCharges.set(txid, record);
@@ -360,6 +475,7 @@ app.post('/api/pix/create-charge', async (req: Request, res: Response) => {
       amount: finalAmount,
       pixCopiaECola,
       qrCodeDataUrl,
+      autoConfirm: createdOnEfi,
       status: 'ATIVA',
       expiresInSeconds: 3600,
       createdAt: record.createdAt
@@ -374,9 +490,10 @@ app.post('/api/pix/create-charge', async (req: Request, res: Response) => {
 });
 
 // 3. Check PIX charge payment status by txid
-app.get('/api/pix/check-status/:txid', (req: Request, res: Response) => {
+app.get('/api/pix/check-status/:txid', async (req: Request, res: Response) => {
   const { txid } = req.params;
   const charge = activeCharges.get(txid);
+  if (charge) await refreshChargeFromEfi(charge);
 
   if (!charge) {
     return res.json({
@@ -400,11 +517,17 @@ app.get('/api/pix/check-status/:txid', (req: Request, res: Response) => {
 });
 
 // 4. Check latest PIX charge status for a specific client (for auto-polling across app)
-app.get('/api/pix/latest-user-charge/:clientId', (req: Request, res: Response) => {
+app.get('/api/pix/latest-user-charge/:clientId', async (req: Request, res: Response) => {
   const { clientId } = req.params;
   const list = Array.from(activeCharges.values())
     .filter((c) => c.clientId === clientId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // The client may have paid an earlier code: check the open ones from the last hours with Efí.
+  for (const c of list.slice(0, 3)) {
+    if (Date.now() - new Date(c.createdAt).getTime() < 2 * 3600_000) await refreshChargeFromEfi(c);
+  }
+  const paidRecently = list.find((c) => c.status === 'CONCLUIDA' && c.paidAt && Date.now() - new Date(c.paidAt).getTime() < 10 * 60_000);
+  if (paidRecently) list.unshift(paidRecently);
 
   if (list.length === 0) {
     return res.json({ found: false, paid: false });
@@ -424,141 +547,18 @@ app.get('/api/pix/latest-user-charge/:clientId', (req: Request, res: Response) =
   });
 });
 
-// 5. Automatic / Manual Confirmation Endpoint (Used when customer completes PIX or via background reconciliation)
-app.post('/api/pix/confirm-payment', (req: Request, res: Response) => {
-  const { txid, clientId, amount, note, endToEndId } = req.body;
-  const now = new Date().toISOString();
+// 5. (removed) Payments are no longer confirmed on request: only Efí can mark a charge as paid.
 
-  let targetCharge: PixChargeRecord | undefined;
-
-  // 1. Try to find by explicit txid
-  if (txid && activeCharges.has(txid)) {
-    targetCharge = activeCharges.get(txid);
-  }
-
-  // 2. Or find the newest active charge for this client
-  if (!targetCharge && clientId) {
-    const userCharges = Array.from(activeCharges.values())
-      .filter((c) => c.clientId === clientId && c.status === 'ATIVA')
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    if (userCharges.length > 0) {
-      targetCharge = userCharges[0];
+// 6. Webhook from Efí: the body is only a hint. Each charge is confirmed by asking Efí itself.
+app.post('/api/pix/webhook', async (req: Request, res: Response) => {
+  const items = Array.isArray(req.body?.pix) ? req.body.pix : [];
+  for (const item of items) {
+    const charge = item?.txid ? activeCharges.get(String(item.txid)) : undefined;
+    if (charge) {
+      lastEfiCheck.delete(charge.txid);
+      await refreshChargeFromEfi(charge);
     }
   }
-
-  // 3. Or find the newest active charge matching the amount
-  if (!targetCharge && amount) {
-    const numAmount = parseFloat(amount);
-    const matchingCharges = Array.from(activeCharges.values())
-      .filter((c) => c.status === 'ATIVA' && Math.abs(c.amount - numAmount) < 0.05)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    if (matchingCharges.length > 0) {
-      targetCharge = matchingCharges[0];
-    }
-  }
-
-  // 4. Or pick the most recent active charge overall
-  if (!targetCharge) {
-    const allActive = Array.from(activeCharges.values())
-      .filter((c) => c.status === 'ATIVA')
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    if (allActive.length > 0) {
-      targetCharge = allActive[0];
-    }
-  }
-
-  if (targetCharge) {
-    targetCharge.status = 'CONCLUIDA';
-    targetCharge.paidAt = now;
-    if (endToEndId) targetCharge.endToEndId = endToEndId;
-    activeCharges.set(targetCharge.txid, targetCharge);
-    saveChargesToDisk();
-
-    console.log(`[Efí Pix Auto-Confirm] Cobrança TXID ${targetCharge.txid} confirmada e quitada com sucesso.`);
-
-    return res.json({
-      success: true,
-      confirmed: true,
-      txid: targetCharge.txid,
-      clientId: targetCharge.clientId,
-      invoiceId: targetCharge.invoiceId,
-      amount: targetCharge.amount,
-      paidAt: targetCharge.paidAt,
-      message: 'Pagamento PIX confirmado e compensado com sucesso pelo Efí Bank!'
-    });
-  }
-
-  // If no existing charge was found, create and confirm a recorded transaction
-  const fallbackTxid = txid || `ZX${Date.now()}`;
-  const recordedCharge: PixChargeRecord = {
-    txid: fallbackTxid,
-    clientId: clientId || 'usr-1',
-    amount: parseFloat(amount) || 35.00,
-    description: note || 'Pagamento PIX Efí Bank Confirmado',
-    pixCopiaECola: '',
-    status: 'CONCLUIDA',
-    createdAt: now,
-    paidAt: now,
-    endToEndId
-  };
-
-  activeCharges.set(fallbackTxid, recordedCharge);
-  saveChargesToDisk();
-
-  res.json({
-    success: true,
-    confirmed: true,
-    txid: fallbackTxid,
-    clientId: recordedCharge.clientId,
-    amount: recordedCharge.amount,
-    paidAt: now,
-    message: 'Pagamento PIX registrado e confirmado com sucesso!'
-  });
-});
-
-// 6. Webhook listener for Efí Bank PIX notifications (Smart auto-reconciliation)
-app.post('/api/pix/webhook', (req: Request, res: Response) => {
-  console.log('[Efí Bank Webhook Received]:', JSON.stringify(req.body));
-  const { pix, txid, valor, endToEndId } = req.body;
-
-  const items = Array.isArray(pix) ? pix : (txid || endToEndId ? [req.body] : []);
-
-  if (items.length > 0) {
-    for (const item of items) {
-      const now = item.horario || new Date().toISOString();
-      let matched = false;
-
-      // 1. Direct match by txid
-      if (item.txid && activeCharges.has(item.txid)) {
-        const record = activeCharges.get(item.txid)!;
-        record.status = 'CONCLUIDA';
-        record.paidAt = now;
-        record.endToEndId = item.endToEndId;
-        activeCharges.set(item.txid, record);
-        matched = true;
-        console.log(`[Efí Webhook] PIX TXID ${item.txid} marcado como CONCLUÍDO via Webhook.`);
-      }
-
-      // 2. Tolerance fallback: match by amount if txid not found
-      if (!matched) {
-        const itemAmount = parseFloat(item.valor);
-        for (const [t, charge] of activeCharges.entries()) {
-          if (charge.status === 'ATIVA' && (!itemAmount || Math.abs(charge.amount - itemAmount) < 0.05)) {
-            charge.status = 'CONCLUIDA';
-            charge.paidAt = now;
-            charge.endToEndId = item.endToEndId;
-            activeCharges.set(t, charge);
-            matched = true;
-            console.log(`[Efí Webhook] PIX conciliado automaticamente para TXID ${t} por valor R$ ${charge.amount}`);
-            break;
-          }
-        }
-      }
-    }
-    saveChargesToDisk();
-  }
-
-  // Efí expects HTTP 200 to acknowledge webhook
   res.status(200).send('OK');
 });
 
@@ -575,51 +575,6 @@ app.get('/api/pix/recent-payments', (req: Request, res: Response) => {
   });
 });
 
-// 8. Simulate payment in Sandbox / Demo mode
-app.post('/api/pix/simulate-pay', (req: Request, res: Response) => {
-  const { txid, clientId } = req.body;
-  const paidAt = new Date().toISOString();
-
-  let charge = txid ? activeCharges.get(txid) : undefined;
-
-  if (!charge && clientId) {
-    const userActive = Array.from(activeCharges.values()).filter(
-      (c) => c.clientId === clientId && c.status === 'ATIVA'
-    );
-    if (userActive.length > 0) charge = userActive[0];
-  }
-
-  if (charge) {
-    charge.status = 'CONCLUIDA';
-    charge.paidAt = paidAt;
-    activeCharges.set(charge.txid, charge);
-  } else {
-    const fallbackTxid = txid || `ZX${Date.now()}`;
-    charge = {
-      txid: fallbackTxid,
-      clientId: clientId || 'usr-1',
-      amount: 35.00,
-      description: 'Simulação Efí Bank Sandbox',
-      pixCopiaECola: '',
-      status: 'CONCLUIDA',
-      createdAt: paidAt,
-      paidAt
-    };
-    activeCharges.set(fallbackTxid, charge);
-  }
-
-  saveChargesToDisk();
-
-  res.json({
-    success: true,
-    txid: charge.txid,
-    clientId: charge.clientId,
-    status: 'CONCLUIDA',
-    paid: true,
-    paidAt,
-    message: 'Pagamento simulado com sucesso no ambiente Sandbox da Efí Bank!'
-  });
-});
 
 // --- WHATSAPP BOT ---
 const EVO_API_URL = process.env.EVO_API_URL || '';
