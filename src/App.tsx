@@ -21,7 +21,6 @@ import { AdminAuthModal } from './components/AdminAuthModal';
 import { 
   INITIAL_TRAILERS, 
   INITIAL_APPS, 
-  INITIAL_PROGRAM_GUIDE,
   INITIAL_CLIENTS
 } from './data/appData';
 import { 
@@ -62,7 +61,7 @@ import { fetchClientByLink, ClientAuthError } from './services/clientAuthService
 import { TrailerItem, ClientApp, ProgramItem, ViewScreen, UserProfile, PushNotification, Invoice, SystemLog } from './types';
 import { soundEffects } from './utils/audio';
 import { INITIAL_SYSTEM_LOGS } from './data/appData';
-import { syncDailyProgramGuide, startEpgAutoTicker } from './services/epgService';
+import { isManualProgram } from './services/epgService';
 
 const DEFAULT_USER: UserProfile = INITIAL_CLIENTS[0];
 
@@ -83,6 +82,13 @@ if (!IS_ADMIN_HOST) {
     localStorage.removeItem('zuxo_clients');
   } catch {}
 }
+
+// Older versions saved a made-up guide on each device. Remove it.
+try {
+  for (const key of ['zuxo_program_guide', 'zuxo_epg_last_sync_date', 'zuxo_epg_last_sync_time', 'zuxo_epg_cached_programs']) {
+    localStorage.removeItem(key);
+  }
+} catch {}
 
 const DEEP_LINK_SCREENS: ViewScreen[] = ['trailer-feed', 'customer-portal', 'daily-guide'];
 
@@ -169,14 +175,8 @@ export default function App() {
     return INITIAL_APPS;
   });
 
-  // DAILY GUIDE PROGRAMS STATE (with localStorage)
-  const [programs, setPrograms] = useState<ProgramItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('zuxo_program_guide');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return INITIAL_PROGRAM_GUIDE;
-  });
+  // EVENTS ADDED BY HAND in the admin panel. The real TV schedule is served by /api/epg and never stored here.
+  const [programs, setPrograms] = useState<ProgramItem[]>([]);
 
   // PUSH NOTIFICATIONS (FCM) STATE
   const [notifications, setNotifications] = useState<PushNotification[]>(() => {
@@ -200,7 +200,6 @@ export default function App() {
   });
 
   const [latestPushToast, setLatestPushToast] = useState<PushNotification | null>(null);
-  const [isEpgSyncing, setIsEpgSyncing] = useState<boolean>(false);
 
   // REAL-TIME FIRESTORE SYNC, INITIAL SEEDING & DAILY EPG AUTO-SYNC
   useEffect(() => {
@@ -234,11 +233,9 @@ export default function App() {
       }
     });
 
-    const unsubPrograms = subscribePrograms((remoteProgs) => {
-      if (remoteProgs && remoteProgs.length > 0) {
-        setPrograms(remoteProgs);
-      }
-    });
+    const unsubPrograms = IS_ADMIN_HOST
+      ? subscribePrograms((remoteProgs) => setPrograms((remoteProgs || []).filter(isManualProgram)))
+      : () => {};
 
     const unsubNotifs = subscribeNotifications((remoteNotifs) => {
       if (remoteNotifs && remoteNotifs.length > 0) {
@@ -280,17 +277,6 @@ export default function App() {
       }
     }, 2500);
 
-    // 5. Automatic Daily EPG Program Guide Synchronization & Live Progress Ticker
-    syncDailyProgramGuide().then((fresh) => {
-      if (fresh && fresh.length > 0) {
-        setPrograms(fresh);
-      }
-    }).catch(console.warn);
-
-    const unsubEpgTicker = startEpgAutoTicker((refreshed) => {
-      setPrograms(refreshed);
-    }, () => programs);
-
     return () => {
       unsubClients();
       unsubTrailers();
@@ -299,7 +285,6 @@ export default function App() {
       unsubNotifs();
       unsubLogs();
       unsubFCM();
-      unsubEpgTicker();
       clearTimeout(autoScanTimer);
     };
   }, []);
@@ -573,7 +558,7 @@ export default function App() {
     soundEffects.playSelect();
     setTrailers(INITIAL_TRAILERS);
     setApps(INITIAL_APPS);
-    setPrograms(INITIAL_PROGRAM_GUIDE);
+    setPrograms([]);
     setClients(INITIAL_CLIENTS);
     setCurrentUser(INITIAL_CLIENTS[0]);
     setSystemLogs(INITIAL_SYSTEM_LOGS);
@@ -590,26 +575,6 @@ export default function App() {
       details: { reason: 'Reset manual via painel' }
     });
     localStorage.removeItem('zuxo_current_user');
-  };
-
-  const handleRefreshDailyGuide = async () => {
-    setIsEpgSyncing(true);
-    try {
-      const fresh = await syncDailyProgramGuide(true);
-      setPrograms(fresh);
-      handleAddSystemLog({
-        action: 'system_reset',
-        severity: 'info',
-        title: 'Sincronização da Grade EPG',
-        description: `Grade diária sincronizada com sucesso (${fresh.length} programas 4K atualizados).`,
-        details: { 
-          reason: 'Atualização solicitada na Grade de Programação',
-          meta: { totalPrograms: fresh.length }
-        }
-      });
-    } finally {
-      setIsEpgSyncing(false);
-    }
   };
 
   return (
@@ -819,11 +784,8 @@ export default function App() {
         {/* GRADE DE PROGRAMAÇÃO DO DIA (COM ATUALIZAÇÃO AUTOMÁTICA EM TEMPO REAL) */}
         {activeScreen === 'daily-guide' && (
           <DailyGuideScreen
-            programs={programs}
             onBackToFeed={() => setActiveScreen('trailer-feed')}
             onOpenCustomerPortal={handleAccessCustomerPortal}
-            onRefreshDailyGuide={handleRefreshDailyGuide}
-            isSyncing={isEpgSyncing}
           />
         )}
 

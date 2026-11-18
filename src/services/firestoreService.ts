@@ -7,14 +7,16 @@ import {
   onSnapshot, 
   getDocs,
   getDocsFromServer,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { isManualProgram } from './epgService';
 import { TrailerItem, ClientApp, ProgramItem, UserProfile, SystemLog } from '../types';
 import { 
   INITIAL_CLIENTS, 
   INITIAL_TRAILERS, 
   INITIAL_APPS, 
-  INITIAL_PROGRAM_GUIDE,
   INITIAL_SYSTEM_LOGS 
 } from '../data/appData';
 
@@ -70,13 +72,6 @@ export async function seedInitialFirestoreData() {
       await setDoc(doc(db, 'apps', app.id), app, { merge: true });
     }
 
-    // 4. Programs
-    const progsSnap = await getDocsFromServer(collection(db, 'programs'));
-    if (progsSnap.empty) {
-      for (const prog of INITIAL_PROGRAM_GUIDE) {
-        await setDoc(doc(db, 'programs', prog.id), prog);
-      }
-    }
   } catch (err) {
     console.warn('Initial seed skipped or completed:', err);
   }
@@ -250,6 +245,17 @@ export function subscribePrograms(
       handleFirestoreError(error, OperationType.GET, 'programs');
     }
   );
+}
+
+// Events the admin added by hand for one day (the real TV schedule comes from the server).
+export async function fetchManualPrograms(date: string): Promise<ProgramItem[]> {
+  try {
+    const snap = await getDocs(query(collection(db, 'programs'), where('date', '==', date)));
+    return snap.docs.map((d) => ({ ...d.data(), id: d.id } as ProgramItem)).filter(isManualProgram);
+  } catch (err) {
+    console.warn('[Grade] Não foi possível ler os eventos extras:', err);
+    return [];
+  }
 }
 
 export async function saveProgramToFirestore(prog: ProgramItem): Promise<void> {
