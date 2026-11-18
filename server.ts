@@ -8,7 +8,8 @@ import QRCode from 'qrcode';
 import https from 'https';
 import crypto from 'crypto';
 import { getGuide, startGuideRefresh, brazilDate } from './epgServer.ts';
-import { ADMIN_AUTH_ENABLED, checkAdminPassword, issueAdminToken, requireAdmin, rateLimit, hashPassword, verifyPassword, safeEqual } from './serverAuth.ts';
+import { planPriceFor, renewalPriceFor, discountFor } from './src/utils/pricing.ts';
+import { ADMIN_AUTH_ENABLED, checkAdminPassword, issueAdminToken, requireAdmin, isAdminRequest, rateLimit, hashPassword, verifyPassword, safeEqual } from './serverAuth.ts';
 
 dotenv.config();
 
@@ -132,6 +133,7 @@ export interface PixChargeRecord {
   efi?: boolean; // created on the Efí Pix API, so its status can be confirmed with the bank
   appliedAt?: string; // when the renewal was written to the client's record
   newExpirationDate?: string;
+  attendant?: string; // attendant whose discount lowered the price, when there was one
 }
 
 const activeCharges = new Map<string, PixChargeRecord>();
@@ -220,7 +222,7 @@ async function applyPaymentToClient(charge: PixChargeRecord): Promise<void> {
         mapValue: {
           fields: {
             id: { stringValue: charge.txid },
-            description: { stringValue: plan ? `Plano ${plan.name}` : 'Renovação da assinatura' },
+            description: { stringValue: `${plan ? `Plano ${plan.name}` : 'Renovação da assinatura'}${charge.attendant ? ` · desconto do atendente ${charge.attendant}` : ''}` },
             date: { stringValue: formatBrDate(todayInBrazil()) },
             dueDate: { stringValue: newExpiration },
             amount: { doubleValue: charge.amount },
@@ -366,6 +368,7 @@ interface PaymentPlanRecord {
   active: boolean;
   recommended: boolean;
   features: string[];
+  discount?: { price: number; attendant: string; clientIds?: string[] };
   updatedAt: string;
 }
 
@@ -461,6 +464,28 @@ function parsePlanInput(body: any, base?: PaymentPlanRecord): { error: string } 
     if (features.length === 0) features = defaultPlanFeatures(screens!);
   }
 
+  // Attendant's discount: undefined keeps the current one, null removes it.
+  let discount = base?.discount;
+  if (body?.discount === null) {
+    discount = undefined;
+  } else if (body?.discount !== undefined) {
+    const d = body.discount;
+    const discountPrice = Math.round(Number(d?.price) * 100) / 100;
+    const attendant = typeof d?.attendant === 'string' ? d.attendant.trim().slice(0, 40) : '';
+    if (!attendant) return { error: 'Informe o nome do atendente que deu o desconto.' };
+    if (!Number.isFinite(discountPrice) || discountPrice <= 0) return { error: 'Informe o preço com desconto.' };
+    if (discountPrice >= price!) return { error: 'O preço com desconto precisa ser menor que o preço do plano.' };
+    let clientIds: string[] | undefined;
+    if (Array.isArray(d.clientIds) && d.clientIds.length > 0) {
+      const ids: string[] = [...new Set<string>(d.clientIds.map((id: unknown) => String(id)))].filter((id) => /^[a-zA-Z0-9_-]{1,128}$/.test(id)).slice(0, 500);
+      if (ids.length === 0) return { error: 'Escolha pelo menos um cliente para receber o desconto.' };
+      clientIds = ids;
+    }
+    discount = { price: discountPrice, attendant, ...(clientIds ? { clientIds } : {}) };
+  }
+  // A plan whose price was lowered below its discount cannot keep that discount.
+  if (discount && discount.price >= price!) return { error: 'O preço com desconto precisa ser menor que o preço do plano.' };
+
   return {
     plan: {
       name,
@@ -470,13 +495,21 @@ function parsePlanInput(body: any, base?: PaymentPlanRecord): { error: string } 
       active: body?.active !== undefined ? Boolean(body.active) : base?.active ?? true,
       recommended: body?.recommended !== undefined ? Boolean(body.recommended) : base?.recommended ?? false,
       features,
+      ...(discount ? { discount } : {}),
     },
   };
 }
 
 // Público: planos ativos para a área do cliente
-app.get('/api/plans', (_req: Request, res: Response) => {
-  res.json({ plans: sortPlans(paymentPlans.filter((p) => p.active)) });
+// Each plan carries only the discount that applies to the client asking (?clientId=), never the list of clients.
+app.get('/api/plans', (req: Request, res: Response) => {
+  const clientId = typeof req.query.clientId === 'string' ? req.query.clientId.slice(0, 128) : undefined;
+  const plans = sortPlans(paymentPlans.filter((p) => p.active)).map(({ discount: _d, ...plan }) => {
+    const original = paymentPlans.find((p) => p.id === plan.id)!;
+    const applies = discountFor(original, clientId);
+    return applies ? { ...plan, discount: { price: applies.price, attendant: applies.attendant } } : plan;
+  });
+  res.json({ plans });
 });
 
 // Admin: todos os planos, inclusive os desativados
@@ -502,7 +535,8 @@ app.put('/api/admin/plans/:id', (req: Request, res: Response) => {
   if (idx === -1) return res.status(404).json({ error: 'Plano não encontrado.' });
   const parsed = parsePlanInput(req.body, paymentPlans[idx]);
   if ('error' in parsed) return res.status(400).json({ error: parsed.error });
-  paymentPlans[idx] = { ...paymentPlans[idx], ...parsed.plan, updatedAt: new Date().toISOString() };
+  const { discount: _old, ...withoutDiscount } = paymentPlans[idx];
+  paymentPlans[idx] = { ...withoutDiscount, ...parsed.plan, updatedAt: new Date().toISOString() };
   savePlans();
   res.json({ plan: paymentPlans[idx] });
 });
@@ -524,10 +558,26 @@ app.post('/api/pix/create-charge', rateLimit('create-charge', 20, 10 * 60_000), 
     if (!invoiceId && planId && !plan) {
       return res.status(400).json({ success: false, error: 'Este plano não está mais disponível. Atualize a página e escolha outro.' });
     }
-    const finalAmount = plan ? plan.price : parseFloat(amount) || 35.00;
+    // The server decides what is charged: the plan's price (with the attendant's discount, if the client gets it)
+    // or the client's monthly price. Only the admin's own test charge may choose an amount.
+    let finalAmount: number;
+    let attendant: string | undefined;
+    if (plan) {
+      const priced = planPriceFor(plan, typeof clientId === 'string' ? clientId : undefined);
+      finalAmount = priced.price;
+      attendant = priced.discount?.attendant;
+    } else if (isAdminRequest(req) && parseFloat(amount) > 0) {
+      finalAmount = parseFloat(amount);
+    } else {
+      const client = typeof clientId === 'string' ? await fsGetClient(clientId) : null;
+      if (!client) return res.status(400).json({ success: false, error: 'Não encontramos o seu cadastro. Entre na sua conta e tente de novo.' });
+      const priced = renewalPriceFor(client as any, paymentPlans as any);
+      finalAmount = priced.price;
+      attendant = priced.discount?.attendant;
+    }
     // Efí requires 26-35 alphanumeric characters for the charge id.
     const txid = `ZX${Date.now()}${Math.random().toString(36).slice(2).toUpperCase().padEnd(11, '0')}`.replace(/[^A-Za-z0-9]/g, '').slice(0, 32).padEnd(26, '0');
-    const chargeLabel = String(description || `Zuxo Player - ${clientName || 'Assinatura'}`).slice(0, 140);
+    const chargeLabel = String(`${description || `Zuxo Player - ${clientName || 'Assinatura'}`}${attendant ? ` (desconto do atendente ${attendant})` : ''}`).slice(0, 140);
 
     // 1. Real charge on the Efí Pix API (payment is confirmed by the bank).
     let pixCopiaECola = '';
@@ -577,6 +627,7 @@ app.post('/api/pix/create-charge', rateLimit('create-charge', 20, 10 * 60_000), 
       planId: plan?.id,
       amount: finalAmount,
       description: description || `Assinatura Zuxo Player VIP`,
+      attendant,
       pixCopiaECola,
       status: 'ATIVA',
       createdAt: new Date().toISOString(),
@@ -1235,6 +1286,14 @@ async function fsFindClient(field: 'email' | 'slug', value: string): Promise<Rec
   const doc = rows.find((row) => row.document)?.document;
   if (!doc) return null;
   return { ...fsFromFields(doc.fields || {}), id: String(doc.name).split('/').pop() };
+}
+
+async function fsGetClient(id: string): Promise<Record<string, any> | null> {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(id)) return null;
+  const res = await fetch(`${FIRESTORE_DOCS}/clients/${id}?key=${firebaseCfg.apiKey}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`leitura do cliente falhou (HTTP ${res.status})`);
+  return { ...fsFromFields(((await res.json()) as any).fields || {}), id };
 }
 
 async function findClientByEmail(email: string) {

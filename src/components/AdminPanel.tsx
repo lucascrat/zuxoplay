@@ -3460,7 +3460,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       soundEffects.playSelect();
                       setEfiTestStatus('Gerando cobrança no gateway Efí Bank...');
                       try {
-                        const res = await fetch('/api/pix/create-charge', {
+                        const res = await adminFetch('/api/pix/create-charge', {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({
@@ -3530,7 +3530,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         )}
 
         {/* GESTÃO DE PLANOS DE ASSINATURA */}
-        {activeAdminTab === 'plans' && <PlansManager />}
+        {activeAdminTab === 'plans' && <PlansManager clients={clients} />}
 
         {/* TAB 9: WHATSAPP BOT — ALERTAS DE COMPROVANTE */}
         {activeAdminTab === 'whatsapp' && (
