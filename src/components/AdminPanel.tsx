@@ -69,6 +69,7 @@ import { displaySystemPushNotification } from '../services/fcmService';
 import { PaymentsByMonthTab } from './PaymentsByMonthTab';
 import { adminFetch } from '../utils/adminSession';
 import { generatePassword } from '../utils/passwords';
+import { brazilDateString, formatLongDate } from '../utils/brazilTime';
 import { CLIENT_SITE_HOST, clientLinkUrl, isSlugTaken, suggestSlug, validateSlug, normalizeSlug } from '../utils/clientLink';
 import { getEfiGatewayConfig, EfiGatewayConfig, EFIBANK_OFFICIAL_PIX_KEY } from '../services/efiBankService';
 
@@ -406,6 +407,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [progLogo, setProgLogo] = useState<string>('🏆');
   const [progCategory, setProgCategory] = useState<ProgramItem['category']>('Esportes');
   const [progTime, setProgTime] = useState<string>('16:00');
+  const [progEndTime, setProgEndTime] = useState<string>('');
+  const [progDate, setProgDate] = useState<string>(() => brazilDateString());
   const [progTitle, setProgTitle] = useState<string>('');
   const [progDesc, setProgDesc] = useState<string>('');
   const [progBadge, setProgBadge] = useState<string>('AO VIVO');
@@ -1141,7 +1144,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             }`}
           >
             <Calendar className="w-4 h-4" />
-            Grade de Programação ({programs.length})
+            Eventos extras da grade ({programs.length})
           </button>
 
           <button
@@ -3206,10 +3209,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-base font-bold text-white font-display">
-                  Grade de Programação do Dia
+                  Eventos extras da grade
                 </h3>
-                <p className="text-xs text-slate-400">
-                  Jogos e programas exibidos na tela dos clientes
+                <p className="text-xs text-slate-400 max-w-xl">
+                  A programação dos canais vem pronta e se atualiza sozinha todos os dias. Aqui você acrescenta eventos especiais, na data e no horário que escolher, e eles aparecem na grade dos clientes.
                 </p>
               </div>
 
@@ -3229,11 +3232,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   channelLogo: progLogo,
                   category: progCategory,
                   time: progTime,
+                  endTime: progEndTime || undefined,
+                  date: progDate,
+                  dayOfWeek: formatLongDate(progDate).split(',')[0],
                   title: progTitle,
-                  description: progDesc || 'Transmissão em alta definição',
+                  description: progDesc || 'Evento especial',
                   badge: progBadge || undefined,
-                  isLive: progIsLive,
-                  progress: progIsLive ? 50 : undefined,
                 });
                 setIsProgFormOpen(false);
                 setProgTitle('');
@@ -3251,12 +3255,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-300 mb-1">Horário:</label>
+                    <label className="block text-slate-300 mb-1">Data:</label>
                     <input
-                      type="text"
+                      type="date"
+                      required
+                      value={progDate}
+                      onChange={(e) => setProgDate(e.target.value)}
+                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 mb-1">Início (horário de Brasília):</label>
+                    <input
+                      type="time"
                       required
                       value={progTime}
                       onChange={(e) => setProgTime(e.target.value)}
+                      className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-300 mb-1">Término (opcional):</label>
+                    <input
+                      type="time"
+                      value={progEndTime}
+                      onChange={(e) => setProgEndTime(e.target.value)}
                       className="w-full bg-[#05130d] border border-emerald-900 rounded-xl px-3 py-2 text-white"
                     />
                   </div>
@@ -3279,6 +3302,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             )}
 
             <div className="bg-[#0a1e16] border border-emerald-950 rounded-3xl divide-y divide-emerald-950/70">
+              {programs.length === 0 && (
+                <p className="p-6 text-center text-sm text-slate-400">Nenhum evento extra cadastrado.</p>
+              )}
               {programs.map((p) => (
                 <div key={p.id} className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -3286,7 +3312,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     <span className="text-lg">{p.channelLogo}</span>
                     <div>
                       <h4 className="font-bold text-white text-sm">{p.title}</h4>
-                      <p className="text-xs text-slate-400">{p.channelName}</p>
+                      <p className="text-xs text-slate-400">{p.channelName} · {p.date ? p.date.split('-').reverse().join('/') : ''}</p>
                     </div>
                   </div>
                   <button onClick={() => onDeleteProgram(p.id)} className="p-2 text-red-400 hover:text-white">

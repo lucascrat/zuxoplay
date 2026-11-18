@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import QRCode from 'qrcode';
 import https from 'https';
 import crypto from 'crypto';
+import { getGuide, startGuideRefresh, brazilDate } from './epgServer.ts';
 import { ADMIN_AUTH_ENABLED, checkAdminPassword, issueAdminToken, requireAdmin, rateLimit, hashPassword, verifyPassword, safeEqual } from './serverAuth.ts';
 
 dotenv.config();
@@ -1332,6 +1333,18 @@ app.get('/api/client/link/:slug', rateLimit('client-link', 60, 10 * 60_000), asy
   }
 });
 
+// --- TV GUIDE (programação real dos canais, por dia, no horário de Brasília) ---
+app.get('/api/epg', rateLimit('epg', 120, 10 * 60_000), async (req: Request, res: Response) => {
+  const requested = typeof req.query.date === 'string' ? req.query.date : brazilDate(Date.now());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(requested) || Number.isNaN(Date.parse(`${requested}T12:00:00-03:00`))) {
+    return res.status(400).json({ error: 'Use a data no formato AAAA-MM-DD.' });
+  }
+  const guide = await getGuide(requested);
+  if (!guide) return res.status(503).json({ error: 'A programação ainda não está disponível. Tente de novo em instantes.' });
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  res.json(guide);
+});
+
 // --- VITE MIDDLEWARE SETUP ---
 async function startServer() {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -1349,6 +1362,8 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   }
+
+  startGuideRefresh(); // downloads the TV guide now and again every few hours
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Zuxo Efí Server] Running on http://0.0.0.0:${PORT} (Sandbox: ${EFIBANK_SANDBOX})`);
