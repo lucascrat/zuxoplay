@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Edit3, Check, X, RefreshCw, Star, Eye, EyeOff, Layers, AlertTriangle } from 'lucide-react';
-import { PaymentPlan } from '../types';
+import { Plus, Trash2, Edit3, Check, X, RefreshCw, Star, Eye, EyeOff, Layers, AlertTriangle, BadgePercent, Search } from 'lucide-react';
+import { PaymentPlan, UserProfile } from '../types';
+import { discountLabel } from '../utils/pricing';
 import {
   fetchAllPlans,
   createPlan,
@@ -28,10 +29,18 @@ interface PlanFormState {
   features: string;
   active: boolean;
   recommended: boolean;
+  discountOn: boolean;
+  discountPrice: string;
+  attendant: string;
+  audience: 'all' | 'chosen';
+  chosenIds: string[];
 }
 
 function emptyForm(): PlanFormState {
-  return { name: '', screens: '1', months: '1', price: '', features: '', active: true, recommended: false };
+  return {
+    name: '', screens: '1', months: '1', price: '', features: '', active: true, recommended: false,
+    discountOn: false, discountPrice: '', attendant: '', audience: 'all', chosenIds: [],
+  };
 }
 
 function formFromPlan(plan: PaymentPlan): PlanFormState {
@@ -43,6 +52,11 @@ function formFromPlan(plan: PaymentPlan): PlanFormState {
     features: plan.features.join('\n'),
     active: plan.active,
     recommended: Boolean(plan.recommended),
+    discountOn: Boolean(plan.discount),
+    discountPrice: plan.discount ? plan.discount.price.toFixed(2).replace('.', ',') : '',
+    attendant: plan.discount?.attendant || '',
+    audience: plan.discount?.clientIds?.length ? 'chosen' : 'all',
+    chosenIds: plan.discount?.clientIds || [],
   };
 }
 
@@ -53,6 +67,19 @@ function formToInput(form: PlanFormState): PlanInput | string {
   if (!Number.isInteger(screens) || screens < 1 || screens > 10) return 'Telas deve ser de 1 a 10.';
   if (!Number.isInteger(months) || months < 1 || months > 36) return 'Meses deve ser de 1 a 36.';
   if (!Number.isFinite(price) || price <= 0) return 'Informe um preço válido.';
+  let discount: PlanInput['discount'] = null;
+  if (form.discountOn) {
+    const discountPrice = parsePrice(form.discountPrice);
+    if (!form.attendant.trim()) return 'Informe o nome do atendente que deu o desconto.';
+    if (!Number.isFinite(discountPrice) || discountPrice <= 0) return 'Informe o preço com desconto.';
+    if (discountPrice >= price) return 'O preço com desconto precisa ser menor que o preço do plano.';
+    if (form.audience === 'chosen' && form.chosenIds.length === 0) return 'Escolha pelo menos um cliente para receber o desconto.';
+    discount = {
+      price: discountPrice,
+      attendant: form.attendant.trim(),
+      ...(form.audience === 'chosen' ? { clientIds: form.chosenIds } : {}),
+    };
+  }
   return {
     name: form.name.trim(),
     screens,
@@ -61,10 +88,11 @@ function formToInput(form: PlanFormState): PlanInput | string {
     active: form.active,
     recommended: form.recommended,
     features: form.features.split('\n').map((f) => f.trim()).filter(Boolean),
+    discount,
   };
 }
 
-export function PlansManager() {
+export function PlansManager({ clients = [] }: { clients?: Pick<UserProfile, 'id' | 'name' | 'email'>[] }) {
   const [plans, setPlans] = useState<PaymentPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -74,6 +102,7 @@ export function PlansManager() {
   const [form, setForm] = useState<PlanFormState>(emptyForm());
   const [formError, setFormError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [clientSearch, setClientSearch] = useState('');
 
   const load = async () => {
     setLoading(true);
@@ -195,7 +224,7 @@ export function PlansManager() {
           <div>
             <h3 className="text-xl font-black text-white font-display">Gestão de Planos</h3>
             <p className="text-slate-400 text-sm mt-0.5">
-              Preços, telas e duração que o cliente vê na aba <span className="text-[#00F59B] font-bold">Planos</span>. O PIX sempre cobra o preço salvo aqui.
+              Preços, telas e duração que o cliente vê na aba <span className="text-[#00F59B] font-bold">Planos</span>. O PIX sempre cobra o preço salvo aqui, já com o desconto do atendente quando o cliente tem um.
             </p>
           </div>
         </div>
@@ -282,6 +311,121 @@ export function PlansManager() {
             <textarea rows={4} className={inputCls} value={form.features} onChange={(e) => setForm({ ...form, features: e.target.value })} />
           </label>
 
+          {/* Desconto do atendente */}
+          <div className="p-4 rounded-2xl bg-[#05140e] border border-amber-500/30 space-y-3">
+            <label className="flex items-center gap-2 text-sm font-bold text-amber-200 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.discountOn}
+                onChange={(e) => setForm({ ...form, discountOn: e.target.checked })}
+                className="accent-amber-400 w-4 h-4"
+              />
+              <BadgePercent className="w-4 h-4" />
+              Desconto do atendente neste plano
+            </label>
+
+            {form.discountOn && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <label className="space-y-1">
+                    <span className="text-xs font-bold text-slate-400">Atendente</span>
+                    <input
+                      className={inputCls}
+                      value={form.attendant}
+                      maxLength={40}
+                      placeholder="Ex.: Lucas"
+                      onChange={(e) => setForm({ ...form, attendant: e.target.value })}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-bold text-slate-400">Preço com desconto (R$)</span>
+                    <input
+                      inputMode="decimal"
+                      className={inputCls}
+                      value={form.discountPrice}
+                      placeholder="25,00"
+                      onChange={(e) => setForm({ ...form, discountPrice: e.target.value })}
+                    />
+                  </label>
+                </div>
+
+                {(() => {
+                  const original = parsePrice(form.price);
+                  const discounted = parsePrice(form.discountPrice);
+                  const valid = Number.isFinite(original) && Number.isFinite(discounted) && discounted > 0 && discounted < original;
+                  return (
+                    <p className="text-xs text-slate-300 bg-black/30 rounded-xl px-3 py-2">
+                      O cliente vai ver:{' '}
+                      <span className="text-slate-500 line-through">{Number.isFinite(original) && original > 0 ? formatBRL(original) : 'R$ --'}</span>{' '}
+                      <strong className="text-[#00F59B]">{valid ? formatBRL(discounted) : 'R$ --'}</strong>{' '}
+                      <span className="text-amber-300">· Super desconto do atendente {form.attendant.trim() || '…'}</span>
+                      {valid && <span className="text-slate-400"> (economiza {formatBRL(original - discounted)})</span>}
+                    </p>
+                  );
+                })()}
+
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-slate-400">Quem recebe o desconto</span>
+                  <div className="flex flex-wrap gap-2">
+                    {([['all', 'Todos os clientes'], ['chosen', 'Só clientes escolhidos']] as const).map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setForm({ ...form, audience: value })}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold border ${
+                          form.audience === value ? 'bg-amber-400 text-black border-amber-400' : 'bg-[#0a1e16] text-slate-300 border-emerald-900/60 hover:text-white'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {form.audience === 'chosen' && (
+                    <div className="space-y-2">
+                      <label className="relative block">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+                        <input
+                          className={`${inputCls} pl-9`}
+                          value={clientSearch}
+                          placeholder="Buscar cliente por nome ou e-mail"
+                          onChange={(e) => setClientSearch(e.target.value)}
+                        />
+                      </label>
+                      <div className="max-h-48 overflow-y-auto rounded-xl border border-emerald-900/50 divide-y divide-emerald-900/30">
+                        {clients
+                          .filter((c) => `${c.name} ${c.email}`.toLowerCase().includes(clientSearch.toLowerCase()))
+                          .map((c) => {
+                            const checked = form.chosenIds.includes(c.id);
+                            return (
+                              <label key={c.id} className="flex items-center gap-3 px-3 py-2.5 text-sm text-slate-200 cursor-pointer hover:bg-white/5">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  className="accent-amber-400 w-4 h-4"
+                                  onChange={() =>
+                                    setForm({
+                                      ...form,
+                                      chosenIds: checked ? form.chosenIds.filter((id) => id !== c.id) : [...form.chosenIds, c.id],
+                                    })
+                                  }
+                                />
+                                <span className="min-w-0 truncate">
+                                  {c.name} <span className="text-slate-500">· {c.email}</span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        {clients.length === 0 && <p className="px-3 py-4 text-xs text-slate-500">Nenhum cliente cadastrado.</p>}
+                      </div>
+                      <p className="text-xs text-slate-500">{form.chosenIds.length} cliente(s) escolhido(s)</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-wrap items-center gap-5">
             <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
               <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} className="accent-[#00F59B] w-4 h-4" />
@@ -347,6 +491,16 @@ export function PlansManager() {
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-slate-800 text-slate-400">Oculto</span>
                         )}
                       </div>
+                      {plan.discount && (
+                        <p className="mt-1.5 inline-flex flex-wrap items-center gap-x-2 gap-y-1 px-2.5 py-1 rounded-lg bg-amber-400/10 border border-amber-400/30 text-xs text-amber-200">
+                          <BadgePercent className="w-3.5 h-3.5" />
+                          <span className="font-bold">{discountLabel(plan.discount)}</span>
+                          <span>{formatBRL(plan.discount.price)} no lugar de {formatBRL(plan.price)}</span>
+                          <span className="text-amber-300/70">
+                            · {plan.discount.clientIds?.length ? `${plan.discount.clientIds.length} cliente(s)` : 'todos os clientes'}
+                          </span>
+                        </p>
+                      )}
                       <p className="text-xs text-slate-400 mt-1">
                         {screensLabel(plan.screens)} • {planPeriodLabel(plan.months)} • {formatBRL(perMonth)}/mês
                         {saving > 0.009 && <span className="text-[#00F59B]"> • economia de {formatBRL(saving)}</span>}

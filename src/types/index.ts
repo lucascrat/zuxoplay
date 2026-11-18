@@ -94,6 +94,13 @@ export interface ProgramItem {
   dayOfWeek?: string;
 }
 
+// Desconto dado por um atendente em um plano: o cliente paga `price` em vez do preço do plano.
+export interface PlanDiscount {
+  price: number; // preço total do plano com desconto
+  attendant: string; // nome do atendente que deu o desconto (aparece para o cliente)
+  clientIds?: string[]; // se preenchido, só estes clientes recebem; vazio = todos
+}
+
 // Plano de assinatura gerenciado pelo admin (servidor: /api/admin/plans)
 export interface PaymentPlan {
   id: string;
@@ -104,6 +111,7 @@ export interface PaymentPlan {
   active: boolean;
   recommended?: boolean;
   features: string[];
+  discount?: PlanDiscount;
   updatedAt?: string;
 }
 

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { PaymentPlan } from '../types';
+import { PaymentPlan, PlanDiscount } from '../types';
 import { INITIAL_PAYMENT_PLANS } from '../data/appData';
 import { adminFetch } from '../utils/adminSession';
 
-export type PlanInput = Omit<PaymentPlan, 'id' | 'updatedAt'>;
+// discount: undefined keeps the current one, null removes it
+export type PlanInput = Omit<PaymentPlan, 'id' | 'updatedAt' | 'discount'> & { discount?: PlanDiscount | null };
 
 export function formatBRL(value: number) {
   return `R$ ${value.toFixed(2).replace('.', ',')}`;
@@ -30,8 +31,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 // Área do cliente: só planos ativos
-export async function fetchActivePlans(): Promise<PaymentPlan[]> {
-  const { plans } = await request<{ plans: PaymentPlan[] }>('/api/plans');
+export async function fetchActivePlans(clientId?: string): Promise<PaymentPlan[]> {
+  const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : '';
+  const { plans } = await request<{ plans: PaymentPlan[] }>(`/api/plans${query}`);
   return plans;
 }
 
@@ -62,18 +64,19 @@ export async function deletePlan(id: string): Promise<void> {
 }
 
 // Planos ativos para a área do cliente; usa a tabela padrão se o servidor não responder
-export function useActivePlans() {
+// clientId: the server sends back the attendant's discount only when this client gets it
+export function useActivePlans(clientId?: string) {
   const [plans, setPlans] = useState<PaymentPlan[]>(INITIAL_PAYMENT_PLANS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    fetchActivePlans()
+    fetchActivePlans(clientId)
       .then((list) => { if (alive) setPlans(list); })
       .catch(() => { /* mantém a tabela padrão */ })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [clientId]);
 
   return { plans, loading };
 }

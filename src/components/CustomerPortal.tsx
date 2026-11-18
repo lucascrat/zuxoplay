@@ -43,6 +43,7 @@ import { soundEffects } from '../utils/audio';
 import { NotificationCenterModal } from './NotificationCenterModal';
 import { SubscriptionCycleTimeline } from './SubscriptionCycleTimeline';
 import { calculateDaysRemaining } from '../services/notificationService';
+import { planPriceFor, renewalPriceFor, discountLabel } from '../utils/pricing';
 import { DEFAULT_PIX_KEYS, generatePixPayload, generateDynamicQrCodeDataUrl, PixKeyOption } from '../utils/pixHelpers';
 import { 
   createEfiPixCharge, 
@@ -88,7 +89,9 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   const clientDaysLeft = calculateDaysRemaining(currentUser.expirationDate);
 
   // PLANOS (gerenciados pelo admin). Sem escolha explícita, a renovação usa o plano mensal das telas do cliente.
-  const { plans: paymentPlans, loading: plansLoading } = useActivePlans();
+  const { plans: paymentPlans, loading: plansLoading } = useActivePlans(currentUser.id);
+  // Monthly renewal price for this client, with the attendant's discount when they get one
+  const renewal = renewalPriceFor(currentUser, paymentPlans);
   const [chosenPlanId, setChosenPlanId] = useState<string | null>(null);
   const [plansScreenFilter, setPlansScreenFilter] = useState<number>(() => currentUser.screens || 1);
   const defaultPlan: PaymentPlan | undefined =
@@ -142,9 +145,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync external invoices if prop changes
+  // A pending renewal is always priced with the monthly price (and the attendant's discount, if any).
   useEffect(() => {
-    setInvoices(initialInvoices);
-  }, [initialInvoices]);
+    setInvoices(initialInvoices.map((inv) => (inv.status === 'pendente' ? { ...inv, amount: renewal.price } : inv)));
+    setSelectedInvoiceToPay((prev) => (prev && prev.status === 'pendente' ? { ...prev, amount: renewal.price } : prev));
+  }, [initialInvoices, renewal.price]);
 
   // Use individual customized apps if configured by admin, otherwise general apps
   const clientApps = (currentUser.customApps && currentUser.customApps.length > 0) ? currentUser.customApps : apps;
@@ -157,18 +162,18 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
     { id: 'access-password', label: 'Senha', value: currentUser.password || appWithCreds?.credSenha || '', secret: true },
   ].filter((field) => field.value);
   
-  // Determine current payment amount:
-  // 1. If paying a specific pending invoice -> that invoice's amount
-  // 2. If the client chose a plan in the Planos tab -> that plan's price
-  // 3. If client has an individual custom price set by admin -> customPrice
-  // 4. Otherwise -> default monthly plan price
+  // What the client pays now (the attendant's discount is already in these prices):
+  // 1. paying a pending invoice -> its amount (set from the monthly price below)
+  // 2. a plan chosen in the Planos tab -> that plan's price for this client
+  // 3. otherwise -> the monthly renewal price
+  const chosenPlanPrice = chosenPlan ? planPriceFor(chosenPlan, currentUser.id) : null;
   const activePaymentAmount = selectedInvoiceToPay
     ? selectedInvoiceToPay.amount
-    : chosenPlan
-      ? chosenPlan.price
-      : (currentUser.customPrice && currentUser.customPrice > 0)
-        ? currentUser.customPrice
-        : selectedPlan?.price ?? 35;
+    : chosenPlanPrice
+      ? chosenPlanPrice.price
+      : renewal.price;
+  // The discount behind what is being paid right now (shown on the payment screen)
+  const payingDiscount = selectedInvoiceToPay || !chosenPlanPrice ? renewal : chosenPlanPrice;
   // Plano que está sendo pago agora (nenhum quando é fatura pendente)
   const planBeingPaid = !selectedInvoiceToPay ? chosenPlan : undefined;
 
@@ -466,7 +471,11 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               <div className="flex flex-wrap items-center gap-3 text-xs text-emerald-400 mt-2 font-medium">
                 <span>{currentUser.screens} {currentUser.screens === 1 ? 'Tela Liberada' : 'Telas Liberadas'}</span>
                 <span>·</span>
-                <span className="text-white">Mensalidade: <strong className="text-[#00F59B]">R$ {activePaymentAmount.toFixed(2).replace('.', ',')}</strong></span>
+                <span className="text-white">
+                  Mensalidade:{' '}
+                  {renewal.discount && <s className="text-slate-500 mr-1">R$ {renewal.original.toFixed(2).replace('.', ',')}</s>}
+                  <strong className="text-[#00F59B]">R$ {renewal.price.toFixed(2).replace('.', ',')}</strong>
+                </span>
                 <span>·</span>
                 <span className="text-white">Vencimento: <strong className="text-[#00F59B]">{currentUser.expirationDate}</strong></span>
               </div>
@@ -491,6 +500,21 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* DESCONTO DO ATENDENTE: o que o cliente está ganhando no sinal */}
+        {renewal.discount && (
+          <div className="rounded-3xl p-4 sm:p-5 flex items-center gap-4 bg-gradient-to-r from-amber-500/20 via-amber-400/10 to-transparent border border-amber-400/50">
+            <div className="w-12 h-12 rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-2xl shrink-0" aria-hidden="true">🎁</div>
+            <div className="min-w-0">
+              <p className="text-sm sm:text-base font-black text-amber-200">{discountLabel(renewal.discount)}</p>
+              <p className="text-sm text-slate-200 mt-0.5">
+                Seu plano de <s className="text-slate-400">R$ {renewal.original.toFixed(2).replace('.', ',')}</s> ficou por{' '}
+                <strong className="text-[#00F59B] text-base">R$ {renewal.price.toFixed(2).replace('.', ',')}</strong>
+                <span className="text-slate-300"> · você economiza R$ {renewal.saving.toFixed(2).replace('.', ',')}</span>
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* PROMINENT PENDING INVOICE ALERT BANNER (QUICK COPY PIX KEY & DIRECT PAY) */}
         {pendingInvoices.length > 0 && (
@@ -688,9 +712,10 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                 {plansForScreen.map((plan) => {
-                  const perMonth = plan.price / plan.months;
+                  const offer = planPriceFor(plan, currentUser.id);
+                  const perMonth = offer.price / plan.months;
                   const base = monthlyPriceFor(plan.screens);
-                  const saving = plan.months > 1 && base ? base * plan.months - plan.price : 0;
+                  const saving = plan.months > 1 && base ? base * plan.months - offer.price : 0;
                   const savingPct = saving > 0 && base ? Math.round((saving / (base * plan.months)) * 100) : 0;
                   const isChosen = chosenPlanId === plan.id;
                   const isCurrentScreens = plan.screens === currentUser.screens;
@@ -715,7 +740,21 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                         <h4 className="text-base font-bold text-white font-display mt-1">{plan.name}</h4>
 
                         <div className="mt-4">
-                          <span className="text-3xl font-black text-white font-mono">{formatBRL(plan.price)}</span>
+                          {offer.discount && (
+                            <>
+                              <p className="text-sm text-slate-500 font-mono">
+                                De <s>{formatBRL(offer.original)}</s>
+                              </p>
+                              <p className="inline-flex items-center gap-1.5 mb-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-400/15 text-amber-200 border border-amber-400/40">
+                                🎁 {discountLabel(offer.discount)}
+                              </p>
+                              <p className="text-xs text-[#00F59B] font-bold">Por apenas</p>
+                            </>
+                          )}
+                          <span className="text-3xl font-black text-white font-mono">{formatBRL(offer.price)}</span>
+                          {offer.discount && (
+                            <p className="text-xs text-amber-200 mt-1">Você economiza {formatBRL(offer.saving)}</p>
+                          )}
                           {plan.months > 1 && (
                             <p className="text-xs text-slate-400 mt-1">equivale a {formatBRL(perMonth)}/mês</p>
                           )}
@@ -750,7 +789,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                               : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800/40 hover:text-white'
                           }`}
                         >
-                          {isChosen ? 'Plano escolhido ✓ Pagar' : 'Escolher e pagar via PIX'}
+                          {isChosen ? 'Plano escolhido ✓ Pagar' : offer.discount ? `Aproveitar e pagar ${formatBRL(offer.price)}` : 'Escolher e pagar via PIX'}
                         </button>
                       </div>
                     </div>
@@ -1172,11 +1211,19 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   </p>
                 </div>
 
-                <div className="bg-[#05130d] border border-emerald-900/80 px-4 py-2.5 rounded-2xl flex items-center gap-3">
-                  <span className="text-xs text-slate-400">Valor Exato:</span>
-                  <span className="text-xl sm:text-2xl font-black text-[#00F59B] font-mono">
-                    R$ {activePaymentAmount.toFixed(2).replace('.', ',')}
-                  </span>
+                <div className="flex flex-col items-start sm:items-end gap-1.5">
+                  <div className="bg-[#05130d] border border-emerald-900/80 px-4 py-2.5 rounded-2xl flex items-center gap-3">
+                    <span className="text-xs text-slate-400">Valor Exato:</span>
+                    {payingDiscount.discount && (
+                      <s className="text-sm text-slate-500 font-mono">R$ {payingDiscount.original.toFixed(2).replace('.', ',')}</s>
+                    )}
+                    <span className="text-xl sm:text-2xl font-black text-[#00F59B] font-mono">
+                      R$ {activePaymentAmount.toFixed(2).replace('.', ',')}
+                    </span>
+                  </div>
+                  {payingDiscount.discount && (
+                    <span className="text-[11px] font-bold text-amber-200">🎁 {discountLabel(payingDiscount.discount)}</span>
+                  )}
                 </div>
               </div>
 
