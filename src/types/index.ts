@@ -126,6 +126,7 @@ export interface Invoice {
   pixKey?: string;
   pixCode?: string;
   clientId?: string;
+  originalAmount?: number; // preço antes do desconto do atendente (só em fatura pendente com desconto)
 }
 
 export interface UserProfile {

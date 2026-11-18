@@ -66,6 +66,16 @@ interface CustomerPortalProps {
   onDeleteNotification?: (id: string) => void;
 }
 
+const brl = (value: number) => `R$ ${value.toFixed(2).replace('.', ',')}`;
+
+/** The price, with the old value struck through right beside it when there is an attendant's discount. */
+const PriceTag: React.FC<{ amount: number; original?: number; oldClass?: string }> = ({ amount, original, oldClass = 'text-slate-500' }) => (
+  <>
+    {original !== undefined && original > amount && <s className={`${oldClass} font-normal mr-1.5 whitespace-nowrap`}>{brl(original)}</s>}
+    <span className="whitespace-nowrap">{brl(amount)}</span>
+  </>
+);
+
 export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   currentUser,
   apps,
@@ -147,7 +157,13 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
   // Sync external invoices if prop changes
   // A pending renewal is always priced with the monthly price (and the attendant's discount, if any).
   useEffect(() => {
-    setInvoices(initialInvoices.map((inv) => (inv.status === 'pendente' ? { ...inv, amount: renewal.price } : inv)));
+    setInvoices(
+      initialInvoices.map((inv) =>
+        inv.status === 'pendente'
+          ? { ...inv, amount: renewal.price, originalAmount: renewal.discount ? renewal.original : undefined }
+          : inv
+      )
+    );
     setSelectedInvoiceToPay((prev) => (prev && prev.status === 'pendente' ? { ...prev, amount: renewal.price } : prev));
   }, [initialInvoices, renewal.price]);
 
@@ -494,9 +510,15 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
               className="flex-1 md:flex-initial py-2.5 px-5 bg-gradient-to-r from-emerald-500 to-[#00F59B] hover:brightness-110 text-slate-950 font-black text-xs uppercase tracking-wide rounded-xl shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2"
             >
               <QrCode className="w-4 h-4" />
-              {pendingInvoices.length > 0 
-                ? `Quitar Fatura Pendente (R$ ${pendingInvoices[0].amount.toFixed(2).replace('.', ',')})` 
-                : `Pagar R$ ${activePaymentAmount.toFixed(2).replace('.', ',')} via PIX`}
+              {pendingInvoices.length > 0 ? (
+                <span>
+                  Quitar Fatura Pendente (<PriceTag amount={pendingInvoices[0].amount} original={pendingInvoices[0].originalAmount} oldClass="text-slate-700" />)
+                </span>
+              ) : (
+                <span>
+                  Pagar <PriceTag amount={activePaymentAmount} original={renewal.discount ? renewal.original : undefined} oldClass="text-slate-700" /> via PIX
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -533,7 +555,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                   </span>
                 </div>
                 <h3 className="text-sm sm:text-base font-bold text-white">
-                  {pendingInvoices[0].description} - <span className="font-mono text-amber-300 font-black">R$ {pendingInvoices[0].amount.toFixed(2).replace('.', ',')}</span>
+                  {pendingInvoices[0].description} - <span className="font-mono text-amber-300 font-black"><PriceTag amount={pendingInvoices[0].amount} original={pendingInvoices[0].originalAmount} /></span>
                 </h3>
                 <p className="text-xs text-slate-300">
                   Chave PIX rápida: <strong className="font-mono text-emerald-400">{DEFAULT_PIX_KEYS[0].key}</strong>
@@ -741,17 +763,16 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
                         <div className="mt-4">
                           {offer.discount && (
-                            <>
-                              <p className="text-sm text-slate-500 font-mono">
-                                De <s>{formatBRL(offer.original)}</s>
-                              </p>
-                              <p className="inline-flex items-center gap-1.5 mb-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-400/15 text-amber-200 border border-amber-400/40">
-                                🎁 {discountLabel(offer.discount)}
-                              </p>
-                              <p className="text-xs text-[#00F59B] font-bold">Por apenas</p>
-                            </>
+                            <p className="inline-flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-400/15 text-amber-200 border border-amber-400/40">
+                              🎁 {discountLabel(offer.discount)}
+                            </p>
                           )}
-                          <span className="text-3xl font-black text-white font-mono">{formatBRL(offer.price)}</span>
+                          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                            {offer.discount && (
+                              <s className="text-xl font-mono font-bold text-slate-500">{formatBRL(offer.original)}</s>
+                            )}
+                            <span className="text-3xl font-black text-white font-mono">{formatBRL(offer.price)}</span>
+                          </div>
                           {offer.discount && (
                             <p className="text-xs text-amber-200 mt-1">Você economiza {formatBRL(offer.saving)}</p>
                           )}
@@ -1173,7 +1194,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
 
                       <div className="text-right">
                         <div className="text-lg sm:text-xl font-mono font-black text-[#00F59B]">
-                          R$ {inv.amount.toFixed(2).replace('.', ',')}
+                          <PriceTag amount={inv.amount} original={inv.originalAmount} />
                         </div>
                         <div className={`mt-1.5 px-3 py-1 rounded-xl text-[11px] font-bold transition-all ${
                           selectedInvoiceToPay?.id === inv.id
@@ -1522,7 +1543,7 @@ export const CustomerPortal: React.FC<CustomerPortalProps> = ({
                         </td>
                         <td className="p-3">{inv.paymentMethod}</td>
                         <td className="p-3 font-mono font-bold text-white">
-                          R$ {inv.amount.toFixed(2).replace('.', ',')}
+                          <PriceTag amount={inv.amount} original={inv.originalAmount} />
                         </td>
                         <td className="p-3">
                           {inv.status === 'pago' ? (
